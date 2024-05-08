@@ -1,0 +1,20 @@
+---
+title: "PreparingTempData"
+author: "Amaryllis Adey"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Goals
+1. To create a single file document that has all the data for the pond temperature study together in one place
+2. To ensure that this format is well setup for use in the analysis code that will be adapted from 'Exercise_06_StateSpace.Rmd
+
+
+# Load in the Data
+```{}
+
+```
