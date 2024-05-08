@@ -20,8 +20,10 @@ What is the probability that ponds exceed the thermal threshold (CTmax) for salm
 
 
 # Files
-  1. Data file creation (monthly means for the temperature data)
+  1. Uploading all the data to GitHub
+     Adding in all the raw data files in the PondTemps folder and organizing these
+  2. Data file creation (monthly means for the temperature data)
      Getting the data entered into one file
      Getting the ERA5 data incorporated (may wait on this and just use airport temps for now)
-  2. Running the State-Space model
+  3. Running the State-Space model
      Use code based on what Alyssa sent along
