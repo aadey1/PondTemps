@@ -46,9 +46,7 @@ setwd(this.dir)
 plot.folder<- paste(this.dir,"/Plots/",sep = "") #address for exported plots
 ```
 
-## Section 1
-
-#This section compares the climates of Cordova and Yakutat
+### Part 1 - Comparing Airport Data Between CRD and YF
 
 # Load in the data and correct issues found initially
 
@@ -77,7 +75,7 @@ summary(met2)
 
 ```
 
-#subset for period of Yakutat water temp data record (nearest year)
+#subset for period of water temperatures from CRD and YF
 
 ```{r}
 met2b<-subset(met2, NAME %in% c("CORDOVA AIRPORT","YAKUTAT AIRPORT") & DATE >= as.Date("2012-01-01"))
@@ -142,8 +140,9 @@ lapply(unique(met2b$NAME), function(x) summary(met2b[met2b$NAME==x,]))
 
 Here we found that there is a high correlation between the two airport datasets (I am unsure why we need this exactly??) But R2 = 0.901 which is great!
 
-##Section 2
-# Comparing logger data to the airport data
+### Part 2 Comparing Logger Data to the Airport Data
+
+## Yakutat Forelands
 
 # Pull in the Yakutat logger air temeprature from the ponds
 ```{r}
@@ -195,7 +194,7 @@ YF.df<-data.frame("site"=rep(unique(df5a$site),each=length(YF.period)),"Date"=re
 df5b<-merge(YF.df,df5a, by=c("Date","site"), all.x=T)
 ```
 
-#Create a plot fo the mean temp through time
+#Create a plot of the mean temp through time
 ```{r}
 ggplot(df5b, aes(x=Date, y= Tmean))+
   geom_line()+
@@ -287,4 +286,88 @@ rm(lm.1.obs,lm.1.pred, lm.1.res, lm.1.sum,sumtab)
 
 ```
 
-# Here the files with the air temperature data are: 
+# Here the files with the air temperature data are: df5d
+
+```{r}
+head(df5d)
+
+```
+
+### Part 3 - Pulling in the Water Temperature Data
+
+## Section 1 - Yakutat Forelands
+
+#Check the working directory again
+```{r}
+getwd()
+
+```
+# Load in the water temperature data from the Yakutat Foreland
+```{R}
+dir1<-paste0(this.dir,"/DataFiles/PondData/Yakutat/Water/")
+yktdat<-list.files(dir1)
+sitekey<-c("MP1","MP3","MP5","MP8","PL1","PL2","PL3","UBP1","UBP2", "UBP3","UBP4") #creates a vector of all of the site names
+yktdat
+bysite1<-lapply(1:length(sitekey),function(x) grep(sitekey[x],yktdat))  
+#Still working on lapply, but grep(pattern,x) searches for a pattern (sitekey) in a vector of character strings.
+#So for this, we are searching for the sitekey in yktdat
+length(bysite1[[1]])
+yktlist<-lapply(paste0(dir1,yktdat),read.csv, skip=1, header=T,col.names=c("Date","Time","Temp"))
+len.list<-lapply(1:length(yktlist),function(x) nrow(yktlist[[x]]))
+
+df1<-do.call(rbind,yktlist)
+
+yktlenkey<-lapply(1:length(bysite1), function(x) rep(sitekey[x],length(bysite1[[x]])))
+yktlenkey2<-unlist(yktlenkey)
+```
+
+# Format the dataframe
+Include a date, site name column, YF for region
+```{r}
+df1$site<-unlist(lapply(1:length(yktlenkey2),function(x){ 
+  rep(yktlenkey2[x],times=as.numeric(len.list[[x]]))
+})) #add sitename column
+
+
+df1$Date<-as.Date(df1$Date,format="%m/%d/%Y") #format date
+
+df1$Region<-"YF"
+
+summary(df1)
+
+df1a <- df1 %>%
+  group_by(Date, site) %>%
+  summarise(
+    Tmean = round(mean(Temp, na.rm = TRUE), 2),
+    Tmax = round(max(Temp, na.rm = TRUE), 2),
+    Tmin = round(min(Temp, na.rm = TRUE), 2),
+    SD = round(sd(Temp, na.rm = TRUE), 2),
+    Region = unique(Region)
+  )
+
+YF.period<-seq(min(df1$Date, na.rm=T),max(df1$Date, na.rm=T), by="day") #maximum study period across all sites
+YF.df<-data.frame("site"=rep(unique(df1a$site),each=length(YF.period)),"Date"=rep(YF.period, times= length(unique(df1a$site))))
+df1b<-merge(YF.df,df1a, by=c("Date","site"), all.x=T)
+
+df1b$Tmean[df1b$Tmean<0]<-0  #change mean values less than 0 to 0. Tmin will still reflect days when negative values were recorded, indicating air exposure in winter.
+```
+
+# Create a plot of the Yakutat Foreland Pond Temperatures through time
+```{r}
+ggplot(df1b, aes(x=Date, y= Tmean))+
+  geom_line()+
+  ylab(expression(paste("Daily mean water temperature ( ", degree ~C, " )")))+
+  scale_x_date(date_breaks="1 year", date_labels = "%Y")+
+  facet_wrap(~site, ncol=3)+
+  theme_minimal()+
+  ggtitle("Yakutat Foreland")+
+  theme(axis.text.x=element_text(angle=50, vjust=1, hjust=1))
+
+#export plot
+ggsave("YF_water_temps.png", path=plot.folder, width=6, height=6, units="in",dpi=300)
+```
+
+
+
+
+
