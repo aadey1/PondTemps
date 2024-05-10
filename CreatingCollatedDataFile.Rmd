@@ -14,8 +14,7 @@ knitr::opts_chunk$set(echo = TRUE)
 1.  To create a single file document that has all the data for the pond temperature study together in one place
 2.  To ensure that this format is well setup for use in the analysis code that will be adapted from 'Exercise_06_StateSpace.Rmd
 
-Code from the linear regression models Created by Luca Adelfio, Rachel Hughes, Amaryllis Adey, and Erik Curtis
-Adapted here to fit code from Alyssa
+Code from the linear regression models Created by Luca Adelfio, Rachel Hughes, Amaryllis Adey, and Erik Curtis Adapted here to fit code from Alyssa
 
 ## Set up the packages to be used throughout this code
 
@@ -99,7 +98,7 @@ ggsave("air_temps.png", path=plot.folder, width=6.5, height=4, units="in",dpi=30
 
 ## Calculating month-year averages for the weather data
 
-LA wrote this for wkyr, RH changed to monyr --> AA calculating by monthly averages through time
+LA wrote this for wkyr, RH changed to monyr --\> AA calculating by monthly averages through time
 
 ```{r}
 met2b$monyr<-format(met2b$DATE, "%m-%Y") #add month-year column
@@ -381,6 +380,7 @@ getwd()
 ```
 
 ### Pull in the data files
+
 ```{r}
 dir2<-paste0(this.dir,"/DataFiles/PondData/Cordova/Water/")
 
@@ -401,7 +401,9 @@ length(crlenkey2)
 ```
 
 ### Format the dataframe
+
 Include a date, site name column, YF for region
+
 ```{r}
 df2$site<-unlist(lapply(1:length(crlenkey2),function(x){ 
   rep(crlenkey2[x],times=as.numeric(crlen.list[[x]]))
@@ -440,6 +442,7 @@ df2b<-subset(df2b, Date >= as.Date("2012-08-01"))
 ```
 
 ### Create a plot of the Copper River Pond Temperatures through Time
+
 ```{r}
 ggplot(df2b, aes(x=Date, y= Tmean))+
   geom_line()+
@@ -457,6 +460,7 @@ ggsave("CR_water_temps.png", path=plot.folder, width=6, height=6, units="in",dpi
 # Part 4 - Finding Monthly Non-Rolling Averages for Water Temp
 
 ## Pulling in the data and adding a month-year column
+
 ```{r}
 #Yakutat
 df1a$monyr<-format(df1a$Date,"%m-%Y") #add month-year column
@@ -496,7 +500,9 @@ df2d$Region<-"CR" #restore region column in prep for merge with Copper River dat
 ```
 
 ## Merge the Yakutat Forelands and Copper River Delta Files
+
 I think I can actually skip this and keep these files separate to forecast for CRD and YF separately
+
 ```{r}
 #Merge YF and CR dat
 #df3<-rbind(df1d, df2d) 
@@ -506,16 +512,17 @@ I think I can actually skip this and keep these files separate to forecast for C
 #df3$monavg[df3$monavg<0]<-0
 ```
 
-
 # Part 5 - Figuring out how to pivot this file to be wider instead of 'longer'
 
 ## Section 1 - Yakutat Forelands
 
 ### Set up the file name and check the structure
+
 ```{r}
 YF_Data <- df1d
 str(YF_Data)
 ```
+
 ## Need to make wider by site and change some column names
 
 ### Starting with changing column names to be clearer
@@ -536,7 +543,9 @@ YF_AirPondData <- YF_Data %>%
 
 str(YF_AirPondData)
 ```
+
 ### Pivot the dataframe wider to make a column for each ponds temepratures
+
 ```{r}
 YF_PondAirTemp_mean <- YF_AirPondData %>%
   pivot_wider(
@@ -559,13 +568,16 @@ YF_PondAirTemp_min <- YF_AirPondData %>%
     values_from = c(Water_MonthMin)
   )
 ```
+
 ## Section 2 - Copper River Delta
 
 ### Set up the file name and check the structure
+
 ```{r}
 CR_Data <- df2d
 str(CR_Data)
 ```
+
 ## Need to make wider by site and change some column names
 
 ### Starting with changing column names to be clearer
@@ -586,7 +598,9 @@ CR_AirPondData <- CR_Data %>%
 
 str(CR_AirPondData)
 ```
+
 ### Pivot the dataframe wider to make a column for each ponds temepratures
+
 ```{r}
 CR_PondAirTemp_mean <- CR_AirPondData %>%
   pivot_wider(
@@ -612,8 +626,12 @@ CR_PondAirTemp_min <- CR_AirPondData %>%
 
 # Part 6 - Save the data files as .csv files to be loaded into other code here
 
-Example of updating code
-
 ```{r}
+write.csv(CR_PondAirTemp_min, file = "CR_PondAirTeimp_min")
+write.csv(CR_PondAirTemp_max, file = "CR_PondAirTeimp_max")
+write.csv(CR_PondAirTemp_mean, file = "CR_PondAirTeimp_mean")
 
+write.csv(YF_PondAirTemp_min, file = "YF_PondAirTeimp_min")
+write.csv(YF_PondAirTemp_max, file = "YF_PondAirTeimp_max")
+write.csv(YF_PondAirTemp_mean, file = "YF_PondAirTeimp_mean")
 ```
