@@ -14,8 +14,7 @@ knitr::opts_chunk$set(echo = TRUE)
 1.  To create a single file document that has all the data for the pond temperature study together in one place
 2.  To ensure that this format is well setup for use in the analysis code that will be adapted from 'Exercise_06_StateSpace.Rmd
 
-##code from the linear regression models Created by Luca Adelfio, Rachel Hughes, Amaryllis Adey, and Erik Curtis
-
+Code from the linear regression models Created by Luca Adelfio, Rachel Hughes, Amaryllis Adey, and Erik Curtis
 Adapted here to fit code from Alyssa
 
 ## Set up the packages to be used throughout this code
@@ -62,7 +61,7 @@ met1$TMAX[met1$DATE=="2012-02-28" & met1$STATION== "USW00026410" ]<-2.2 #note th
 met1[met1$DATE=="2012-02-28" & met1$STATION== "USW00026410" ,] #
 ```
 
-### find average temperature
+## Find average temperature
 
 ```{r}
 met1$TAVG2<-(met1$TMAX+met1$TMIN)/2 #*[This isn't the average though? - Erik]
@@ -75,7 +74,7 @@ summary(met2)
 
 ```
 
-### subset for period of water temperatures from CRD and YF
+## Subset for period of water temperatures from CRD and YF
 
 ```{r}
 met2b<-subset(met2, NAME %in% c("CORDOVA AIRPORT","YAKUTAT AIRPORT") & DATE >= as.Date("2012-01-01"))
@@ -140,7 +139,7 @@ lapply(unique(met2b$NAME), function(x) summary(met2b[met2b$NAME==x,]))
 
 Here we found that there is a high correlation between the two airport datasets (I am unsure why we need this exactly??) But R2 = 0.901 which is great!
 
-# Part 2 Comparing Logger Data to the Airport Data
+# Part 2 - Comparing Logger Data to the Airport Data
 
 ## Yakutat Forelands
 
@@ -421,13 +420,19 @@ df2$site<-mapvalues(df2$site, from = c("BeaverS", "Cabin","CanneryControl", "Eya
 unique(df2$site)
 summary(df2)
 
+df2$Date<-as.Date(df2$Date,format="%m/%d/%Y") #format date
 
-df2a<-ddply(df2,.(Date,site), summarize,
-            Tmean = round(mean(Temp, na.rm=T),2),
-            Tmax= round(max(Temp, na.rm=T),2),
-            Tmin= round(min(Temp, na.rm=T),2),
-            SD= round(sd(Temp, na.rm=T),2),
-            Region = unique(Region))
+df2$Region<-"CRD"
+
+df2a <- df2 %>%
+  group_by(Date, site) %>%
+  summarise(
+    Tmean = round(mean(Temp, na.rm = TRUE), 2),
+    Tmax = round(max(Temp, na.rm = TRUE), 2),
+    Tmin = round(min(Temp, na.rm = TRUE), 2),
+    SD = round(sd(Temp, na.rm = TRUE), 2),
+    Region = unique(Region)
+  )
 
 CR.period<-seq(min(df2$Date, na.rm=T),max(df2$Date, na.rm=T), by="day") #maximum study period across all sites
 CR.df<-data.frame("site"=rep(unique(df2a$site),each=length(CR.period)),"Date"=rep(CR.period, times= length(unique(df2a$site))))
@@ -451,3 +456,51 @@ ggplot(df2b, aes(x=Date, y= Tmean))+
 #export plot
 ggsave("CR_water_temps.png", path=plot.folder, width=6, height=6, units="in",dpi=300)
 ```
+
+# Part 4 - Finding Monthly Non-Rolling Averages for Water Temp
+
+## Pulling in the data and adding a month-year column
+```{r}
+#Yakutat
+df1a$monyr<-format(df1a$Date,"%m-%Y") #add month-year column
+
+df1c <- df1a %>%
+  group_by(site, monyr) %>%
+  summarise(
+    monavg = round(mean(Tmean, na.rm = TRUE), 2),
+    monmax = round(max(Tmax, na.rm = TRUE), 2),
+    monmin = round(min(Tmin, na.rm = TRUE), 2)
+  ) %>%
+  ungroup()
+
+#Cordova
+df2a$monyr<-format(df2a$Date,"%m-%Y") #add mon-year column
+
+df2c <- df2a %>%
+  group_by(site, monyr) %>%
+  summarise(
+    monavg = round(mean(Tmean, na.rm = TRUE), 2),
+    monmax = round(max(Tmax, na.rm = TRUE), 2),
+    monmin = round(min(Tmin, na.rm = TRUE), 2)
+  ) %>%
+  ungroup()
+```
+
+## Merging the Weather Data with Each Region
+
+```{r}
+#merge Yakutat dat with weather dat
+df1d<-merge(df1c,subset(met3, NAME=="YAKUTAT AIRPORT"), by="monyr",all.x=T)
+df1d$Region<-"YF" #restore region column in prep for merge with Copper River data.
+
+#merge Cordova dat with weather dat
+df2d<-merge(df2c,subset(met3, NAME=="CORDOVA AIRPORT"), by="monyr",all.x=T)
+df2d$Region<-"CR" #restore region column in prep for merge with Copper River data.
+```
+
+## Merge the Yakutat Forelands and Copper River Delta Files
+
+```{r}
+
+```
+
