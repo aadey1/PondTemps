@@ -19,7 +19,7 @@ What is the probability that ponds exceed the thermal threshold (CTmax) for salm
                2. Will give error that grows through time, where dates farther out have a wider confidence interval than closer to now
 
 
-# Files
+# Steps Covered here
   1. Uploading all the data to GitHub
      Adding in all the raw data files in the PondTemps folder and organizing these
   2. Data file creation (monthly means for the temperature data)
@@ -27,3 +27,9 @@ What is the probability that ponds exceed the thermal threshold (CTmax) for salm
      Getting the ERA5 data incorporated (may wait on this and just use airport temps for now)
   3. Running the State-Space model
      Use code based on what Alyssa sent along
+
+# Code files here
+  'CreatingCollatedDataFile.Rmd' is reading in all the individual pond temp, air temp logger, and airport data files
+  'Exercise_06_StateSpace.Rmd' is the intial example code that the state-space model will be based on
+  'StateSpacePondTempModel - YF.Rmd' is the first attempt at the state-space model of the pond temperatures in the Yakutat Forelands
+  'StateSpacePondTempModel - CR.Rmd' is the first attempt at the state-space model fo the pond temepratures in the Copper River Delta
