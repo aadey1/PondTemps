@@ -9,16 +9,16 @@ output: word_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## Goals
+# Goals
 
 1.  To create a single file document that has all the data for the pond temperature study together in one place
 2.  To ensure that this format is well setup for use in the analysis code that will be adapted from 'Exercise_06_StateSpace.Rmd
 
-#code from the linear regression models Created by Luca Adelfio, Rachel Hughes, Amaryllis Adey, and Erik Curtis
+##code from the linear regression models Created by Luca Adelfio, Rachel Hughes, Amaryllis Adey, and Erik Curtis
 
 Adapted here to fit code from Alyssa
 
-# Set up the packages to be used throughout this code
+## Set up the packages to be used throughout this code
 
 ```{r}
 library(ggplot2) #for plotting
@@ -33,7 +33,7 @@ library(lubridate)
 library(ModelMetrics)
 ```
 
-#Set up the working directory
+## Set up the working directory
 
 ```{r}
 #remove all existing variables
@@ -46,9 +46,9 @@ setwd(this.dir)
 plot.folder<- paste(this.dir,"/Plots/",sep = "") #address for exported plots
 ```
 
-### Part 1 - Comparing Airport Data Between CRD and YF
+# Part 1 - Comparing Airport Data Between CRD and YF
 
-# Load in the data and correct issues found initially
+## Load in the data and correct issues found initially
 
 ```{r}
 met1<-read.csv(paste(this.dir,"/DataFiles/ClimateData/2001_2019_CDV_YAK/daily_wx_data.csv",sep=""),header=T, na.strings=-9999)
@@ -62,7 +62,7 @@ met1$TMAX[met1$DATE=="2012-02-28" & met1$STATION== "USW00026410" ]<-2.2 #note th
 met1[met1$DATE=="2012-02-28" & met1$STATION== "USW00026410" ,] #
 ```
 
-#find average temperature
+### find average temperature
 
 ```{r}
 met1$TAVG2<-(met1$TMAX+met1$TMIN)/2 #*[This isn't the average though? - Erik]
@@ -75,7 +75,7 @@ summary(met2)
 
 ```
 
-#subset for period of water temperatures from CRD and YF
+### subset for period of water temperatures from CRD and YF
 
 ```{r}
 met2b<-subset(met2, NAME %in% c("CORDOVA AIRPORT","YAKUTAT AIRPORT") & DATE >= as.Date("2012-01-01"))
@@ -98,7 +98,7 @@ ggsave("air_temps.png", path=plot.folder, width=6.5, height=4, units="in",dpi=30
 
 ```
 
-# Calculating month-year averages for the weather data
+## Calculating month-year averages for the weather data
 
 LA wrote this for wkyr, RH changed to monyr --\> AA calculating by monthly averages through time
 
@@ -140,11 +140,12 @@ lapply(unique(met2b$NAME), function(x) summary(met2b[met2b$NAME==x,]))
 
 Here we found that there is a high correlation between the two airport datasets (I am unsure why we need this exactly??) But R2 = 0.901 which is great!
 
-### Part 2 Comparing Logger Data to the Airport Data
+# Part 2 Comparing Logger Data to the Airport Data
 
 ## Yakutat Forelands
 
-# Pull in the Yakutat logger air temeprature from the ponds
+### Pull in the Yakutat logger air temeprature from the ponds
+
 ```{r}
 getwd() 
 dir1<-paste0(this.dir,"/DataFiles/PondData/Yakutat/Air/")
@@ -169,7 +170,8 @@ df5$site<-unlist(lapply(1:length(lenkey2),function(x){
 })) #add sitename column
 ```
 
-# Format the Yakutat Air Temp Data
+### Format the Yakutat Air Temp Data
+
 ```{r}
 df5$Date<-as.Date(df5$Date,format="%m/%d/%Y") #format date
 
@@ -194,7 +196,8 @@ YF.df<-data.frame("site"=rep(unique(df5a$site),each=length(YF.period)),"Date"=re
 df5b<-merge(YF.df,df5a, by=c("Date","site"), all.x=T)
 ```
 
-#Create a plot of the mean temp through time
+### Create a plot of the mean temp through time
+
 ```{r}
 ggplot(df5b, aes(x=Date, y= Tmean))+
   geom_line()+
@@ -209,7 +212,8 @@ ggplot(df5b, aes(x=Date, y= Tmean))+
 ggsave("YK_air_temps.png", path=plot.folder, width=8.5, height=6, units="in",dpi=300)
 ```
 
-#find 7 day non-rolling averages to compare to Yakutat Airport
+### Find 7 day non-rolling averages to compare to Yakutat Airport
+
 ```{r}
 df5b$wkyr<-format(df5b$Date,"%U-%Y") #add week-year column
 
@@ -241,9 +245,8 @@ ggplot(na.omit(df5d), aes(x=Awkavg, y=wkavg))+
 ggsave("YK_air_lm_reg.png", path=plot.folder, width=6, height=6, units="in",dpi=300)
 ```
 
+### Find Regression fit and coefficients Fit linear models for air vs. air temps at Yakutat sites/airport
 
-#Find Regression fit and coefficients
-Fit linear models for air vs. air temps at Yakutat sites/airport
 ```{r}
 sites2<-c("MP1", "MP3","MP5","MP8","PL1","PL2","PL3","UBP1","UBP2", "UBP3","UBP4")
 
@@ -286,23 +289,26 @@ rm(lm.1.obs,lm.1.pred, lm.1.res, lm.1.sum,sumtab)
 
 ```
 
-# Here the files with the air temperature data are: df5d
+### Here the files with the air temperature data are: df5d
 
 ```{r}
 head(df5d)
 
 ```
 
-### Part 3 - Pulling in the Water Temperature Data
+# Part 3 - Pulling in the Water Temperature Data
 
 ## Section 1 - Yakutat Forelands
 
-#Check the working directory again
+### Check the working directory again
+
 ```{r}
 getwd()
 
 ```
-# Load in the water temperature data from the Yakutat Foreland
+
+### Load in the water temperature data from the Yakutat Foreland
+
 ```{R}
 dir1<-paste0(this.dir,"/DataFiles/PondData/Yakutat/Water/")
 yktdat<-list.files(dir1)
@@ -321,8 +327,10 @@ yktlenkey<-lapply(1:length(bysite1), function(x) rep(sitekey[x],length(bysite1[[
 yktlenkey2<-unlist(yktlenkey)
 ```
 
-# Format the dataframe
+### Format the dataframe
+
 Include a date, site name column, YF for region
+
 ```{r}
 df1$site<-unlist(lapply(1:length(yktlenkey2),function(x){ 
   rep(yktlenkey2[x],times=as.numeric(len.list[[x]]))
@@ -352,7 +360,8 @@ df1b<-merge(YF.df,df1a, by=c("Date","site"), all.x=T)
 df1b$Tmean[df1b$Tmean<0]<-0  #change mean values less than 0 to 0. Tmin will still reflect days when negative values were recorded, indicating air exposure in winter.
 ```
 
-# Create a plot of the Yakutat Foreland Pond Temperatures through time
+### Create a plot of the Yakutat Foreland Pond Temperatures through time
+
 ```{r}
 ggplot(df1b, aes(x=Date, y= Tmean))+
   geom_line()+
@@ -367,7 +376,78 @@ ggplot(df1b, aes(x=Date, y= Tmean))+
 ggsave("YF_water_temps.png", path=plot.folder, width=6, height=6, units="in",dpi=300)
 ```
 
+## Section 2 - Copper River Delta
+
+### Get the working directory info
+
+```{r}
+getwd() 
+```
+
+### Pull in the data files
+```{r}
+dir2<-paste0(this.dir,"/DataFiles/PondData/Cordova/Water/")
+
+crdat<-list.files(dir2)
+
+sitekeycr<-c("BeaverS", "Cabin","CanneryControl", "EyakS","RHM","Square","TDN", "TDS", "Wooded") #searching for these names
+crdat
+bysite2<-lapply(1:length(sitekeycr),function(x) grep(sitekeycr[x],crdat)) #if this organizes the data by site 
+length(bysite2) #used to be length(bysite[[1]]), but RH changed because this gives the length of bysite1, not the length of the first bysite1 (bysite[[1]])
+crlist<-lapply(paste0(dir2,crdat),read.csv, skip=1, header=T,col.names=c("Date","Time","Temp"),row.names=NULL) 
+crlen.list<-lapply(1:length(crlist),function(x) nrow(crlist[[x]]))
+
+df2<-do.call(rbind,crlist)
+
+crlenkey<-lapply(1:length(bysite2), function(x) rep(sitekeycr[x],length(bysite2[[x]])))
+crlenkey2<-unlist(crlenkey)
+length(crlenkey2)
+```
+
+### Format the dataframe
+Include a date, site name column, YF for region
+```{r}
+df2$site<-unlist(lapply(1:length(crlenkey2),function(x){ 
+  rep(crlenkey2[x],times=as.numeric(crlen.list[[x]]))
+})) #add sitename column
+
+df2$Date<-as.Date(df2$Date,format="%m/%d/%Y") #format date
+
+df2$Region<-"CR"
+
+#Change site names to Carmella's codes for consistency with three character Yakutat codes
+df2$site<-mapvalues(df2$site, from = c("BeaverS", "Cabin","CanneryControl", "EyakS","RHM","Square","TDN", "TDS", "Wooded"),
+                    to = c("BVS","CAB","CAN", "EYS","RHM","SQR","TIN","TIS","WDD"))
+unique(df2$site)
+summary(df2)
 
 
+df2a<-ddply(df2,.(Date,site), summarize,
+            Tmean = round(mean(Temp, na.rm=T),2),
+            Tmax= round(max(Temp, na.rm=T),2),
+            Tmin= round(min(Temp, na.rm=T),2),
+            SD= round(sd(Temp, na.rm=T),2),
+            Region = unique(Region))
 
+CR.period<-seq(min(df2$Date, na.rm=T),max(df2$Date, na.rm=T), by="day") #maximum study period across all sites
+CR.df<-data.frame("site"=rep(unique(df2a$site),each=length(CR.period)),"Date"=rep(CR.period, times= length(unique(df2a$site))))
+df2b<-merge(CR.df,df2a, by=c("Date","site"), all.x=T)
 
+df2b$Tmean[df2b$Tmean<0]<-0  #change mean values less than 0 to 0. Tmin will still reflect days when negative values were recorded, indicating air exposure in winter.
+df2b<-subset(df2b, Date >= as.Date("2012-08-01"))
+```
+
+### Create a plot of the Copper River Pond Temperatures through Time
+```{r}
+ggplot(df2b, aes(x=Date, y= Tmean))+
+  geom_line()+
+  ylab(expression(paste("Daily mean water temperature ( ", degree ~C, " )")))+
+  scale_x_date(date_breaks="1 year", date_labels = "%Y")+
+  facet_wrap(~site, ncol=3)+
+  ggtitle("Copper River Delta")+
+  theme_minimal()+
+  theme(axis.text.x=element_text(angle=50, vjust=1, hjust=1))
+
+#export plot
+ggsave("CR_water_temps.png", path=plot.folder, width=6, height=6, units="in",dpi=300)
+```
