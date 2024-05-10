@@ -501,6 +501,15 @@ df2d$Region<-"CR" #restore region column in prep for merge with Copper River dat
 ## Merge the Yakutat Forelands and Copper River Delta Files
 
 ```{r}
-
+#Merge YF and CR dat
+df3<-rbind(df1d, df2d) 
+df3$site<-factor(df3$site)
+df3$NAME<-factor(df3$NAME)
+df3$Region<-factor(df3$Region)
+df3$monavg[df3$monavg<0]<-0
 ```
+
+
+
+
 
