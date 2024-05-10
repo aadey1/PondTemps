@@ -99,23 +99,19 @@ ggsave("air_temps.png", path=plot.folder, width=6.5, height=4, units="in",dpi=30
 
 ## Calculating month-year averages for the weather data
 
-LA wrote this for wkyr, RH changed to monyr --\> AA calculating by monthly averages through time
+LA wrote this for wkyr, RH changed to monyr --> AA calculating by monthly averages through time
 
 ```{r}
 met2b$monyr<-format(met2b$DATE, "%m-%Y") #add month-year column
-met2b$wkyr<-format(met2b$DATE,"%U-%Y") # add week-year column
 
-met3<-ddply(met2b, .(NAME,monyr,wkyr), summarize,
-            Awkavg=round(mean(TAVG2, na.rm=T),2),
-            Awkmax=round(max(TMAX, na.rm=T),2),
-            Awkmin=round(min(TMIN, na.rm=T),2))
-
-#Missing Data for wkyr 50-2019
-met2b %>% subset(NAME=="YAKUTAT AIRPORT" & wkyr == "50-2019")
-#Remove 
-met3 <- met3 %>%
-  subset(!(NAME=="YAKUTAT AIRPORT" & wkyr == "50-2019"))
-
+met3 <- met2b %>%
+  group_by(NAME, monyr) %>%
+  summarise(
+    Amonavg = round(mean(TAVG2, na.rm = TRUE), 2),
+    Amonmax = round(max(TMAX, na.rm = TRUE), 2),
+    Amonmin = round(min(TMIN, na.rm = TRUE), 2)
+  ) %>%
+  ungroup()
 
 #Regress Cordova vs. Yakutat 
 lm1<-merge(subset(met2b, NAME == "CORDOVA AIRPORT", select=c(DATE,TAVG2)), subset(met2b, NAME == "YAKUTAT AIRPORT",select=c(DATE,TAVG2)), by="DATE", all=T)
@@ -214,21 +210,22 @@ ggsave("YK_air_temps.png", path=plot.folder, width=8.5, height=6, units="in",dpi
 ### Find 7 day non-rolling averages to compare to Yakutat Airport
 
 ```{r}
-df5b$wkyr<-format(df5b$Date,"%U-%Y") #add week-year column
+df5b <- df5b %>%
+  mutate(monyr = format(Date, "%m-%Y"))
 
 df5c <- df5b %>%
-  group_by(site, wkyr) %>%
-  summarise(wkavg = round(mean(Tmean, na.rm = TRUE), 2),
-            wkmax = if(anyNA(Tmax)) NA else round(max(Tmax, na.rm = TRUE), 2),
-            wkmin = if(anyNA(Tmin)) NA else round(min(Tmin, na.rm = TRUE), 2),
+  group_by(site, monyr) %>%
+  summarise(monavg = round(mean(Tmean, na.rm = TRUE), 2),
+            monmax = if(anyNA(Tmax)) NA else round(max(Tmax, na.rm = TRUE), 2),
+            monmin = if(anyNA(Tmin)) NA else round(min(Tmin, na.rm = TRUE), 2),
             .groups = 'drop')
 
 #merge Yakutat dat with weather dat
-df5d<-merge(df5c,subset(met3, NAME=="YAKUTAT AIRPORT"), by="wkyr",all.x=T)
+df5d<-merge(df5c,subset(met3, NAME=="YAKUTAT AIRPORT"), by="monyr",all.x=T)
 df5d$Region<-"YF" #restore region column in prep for merge with Copper River data.
 
 #Air vs. airport
-ggplot(na.omit(df5d), aes(x=Awkavg, y=wkavg))+
+ggplot(na.omit(df5d), aes(x=Amonavg, y=monavg))+
   geom_hline(yintercept = 0, linetype=2)+
   geom_vline(xintercept = 0,linetype=2)+
   geom_abline(slope=1,intercept = 0, color = "red", lty=3)+
@@ -249,11 +246,11 @@ ggsave("YK_air_lm_reg.png", path=plot.folder, width=6, height=6, units="in",dpi=
 ```{r}
 sites2<-c("MP1", "MP3","MP5","MP8","PL1","PL2","PL3","UBP1","UBP2", "UBP3","UBP4")
 
-lm.1.res<-lapply(sites2,function(x) try(lm(wkavg~Awkavg,data=df5d, subset= site==x),silent=T)) #run LM 
+lm.1.res<-lapply(sites2,function(x) try(lm(monavg~Amonavg,data=df5d, subset= site==x),silent=T)) #run LM 
 lm.1.sum<-lapply(1:length(sites2),function(x) summary(lm.1.res[[x]]))
 lm.1.sum
-lm.1.pred<-lapply(sites2,function(x) try(predict(lm(wkavg~Awkavg,data=df5d, subset= site==x)),silent=T)) 
-lm.1.obs<-lapply(sites2, function(x) na.omit(subset(df5d, subset= site==x, select = wkavg )))
+lm.1.pred<-lapply(sites2,function(x) try(predict(lm(monavg~Amonavg,data=df5d, subset= site==x)),silent=T)) 
+lm.1.obs<-lapply(sites2, function(x) na.omit(subset(df5d, subset= site==x, select = monavg )))
 
 
 #Create summary table for comparing models
@@ -499,17 +496,122 @@ df2d$Region<-"CR" #restore region column in prep for merge with Copper River dat
 ```
 
 ## Merge the Yakutat Forelands and Copper River Delta Files
-
+I think I can actually skip this and keep these files separate to forecast for CRD and YF separately
 ```{r}
 #Merge YF and CR dat
-df3<-rbind(df1d, df2d) 
-df3$site<-factor(df3$site)
-df3$NAME<-factor(df3$NAME)
-df3$Region<-factor(df3$Region)
-df3$monavg[df3$monavg<0]<-0
+#df3<-rbind(df1d, df2d) 
+#df3$site<-factor(df3$site)
+#df3$NAME<-factor(df3$NAME)
+#df3$Region<-factor(df3$Region)
+#df3$monavg[df3$monavg<0]<-0
 ```
 
 
+# Part 5 - Figuring out how to pivot this file to be wider instead of 'longer'
 
+## Section 1 - Yakutat Forelands
 
+### Set up the file name and check the structure
+```{r}
+YF_Data <- df1d
+str(YF_Data)
+```
+## Need to make wider by site and change some column names
 
+### Starting with changing column names to be clearer
+
+```{r}
+YF_AirPondData <- YF_Data %>%
+  rename(
+    `Month-Year` = monyr,
+    Pond = site,
+    Water_MonthAvg = monavg,
+    Water_MonthMax = monmax,
+    Water_MonthMin = monmin,
+    Airport = NAME,
+    Air_MonthAvg = Amonavg,
+    Air_MonthMax = Amonmax,
+    Air_MonthMin = Amonmin
+  )
+
+str(YF_AirPondData)
+```
+### Pivot the dataframe wider to make a column for each ponds temepratures
+```{r}
+YF_PondAirTemp_mean <- YF_AirPondData %>%
+  pivot_wider(
+    id_cols = c("Month-Year", "Airport", "Air_MonthAvg", "Air_MonthMax", "Air_MonthMin", "Region"),
+    names_from = Pond,
+    values_from = c(Water_MonthAvg)
+  )
+
+YF_PondAirTemp_max <- YF_AirPondData %>%
+  pivot_wider(
+    id_cols = c("Month-Year", "Airport", "Air_MonthAvg", "Air_MonthMax", "Air_MonthMin", "Region"),
+    names_from = Pond,
+    values_from = c(Water_MonthMax)
+  )
+
+YF_PondAirTemp_min <- YF_AirPondData %>%
+  pivot_wider(
+    id_cols = c("Month-Year", "Airport", "Air_MonthAvg", "Air_MonthMax", "Air_MonthMin", "Region"),
+    names_from = Pond,
+    values_from = c(Water_MonthMin)
+  )
+```
+## Section 2 - Copper River Delta
+
+### Set up the file name and check the structure
+```{r}
+CR_Data <- df2d
+str(CR_Data)
+```
+## Need to make wider by site and change some column names
+
+### Starting with changing column names to be clearer
+
+```{r}
+CR_AirPondData <- CR_Data %>%
+  rename(
+    `Month-Year` = monyr,
+    Pond = site,
+    Water_MonthAvg = monavg,
+    Water_MonthMax = monmax,
+    Water_MonthMin = monmin,
+    Airport = NAME,
+    Air_MonthAvg = Amonavg,
+    Air_MonthMax = Amonmax,
+    Air_MonthMin = Amonmin
+  )
+
+str(CR_AirPondData)
+```
+### Pivot the dataframe wider to make a column for each ponds temepratures
+```{r}
+CR_PondAirTemp_mean <- CR_AirPondData %>%
+  pivot_wider(
+    id_cols = c("Month-Year", "Airport", "Air_MonthAvg", "Air_MonthMax", "Air_MonthMin", "Region"),
+    names_from = Pond,
+    values_from = c(Water_MonthAvg)
+  )
+
+CR_PondAirTemp_max <- CR_AirPondData %>%
+  pivot_wider(
+    id_cols = c("Month-Year", "Airport", "Air_MonthAvg", "Air_MonthMax", "Air_MonthMin", "Region"),
+    names_from = Pond,
+    values_from = c(Water_MonthMax)
+  )
+
+CR_PondAirTemp_min <- CR_AirPondData %>%
+  pivot_wider(
+    id_cols = c("Month-Year", "Airport", "Air_MonthAvg", "Air_MonthMax", "Air_MonthMin", "Region"),
+    names_from = Pond,
+    values_from = c(Water_MonthMin)
+  )
+```
+
+# Part 6 - Save the data files as .csv files to be loaded into other code here
+
+```{r}
+
+```
