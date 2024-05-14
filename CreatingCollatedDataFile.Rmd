@@ -31,6 +31,7 @@ library(ggpubr)#for arranging plots
 library(base)
 library(lubridate)
 library(ModelMetrics)
+library(dplyr)
 ```
 
 ## Set up the working directory
@@ -176,15 +177,17 @@ df5$Region<-"YF"
 summary(df5)
 
 df5a <- df5 %>%
-  group_by(Date, Region, site) %>%
-  summarise(Tmean = round(mean(Temp, na.rm = TRUE), 2),
-            Tmin = ifelse(all(is.na(Temp)), NA, round(min(Temp, na.rm = TRUE), 2)),
-            Tmax = ifelse(all(is.na(Temp)), NA, round(max(Temp, na.rm = TRUE), 2)),
-            SD= round(sd(Temp, na.rm=T),2),
-            .groups = 'drop')
+  group_by(Date, site) %>%
+  summarise(
+    Tmean = round(mean(Temp, na.rm = TRUE), 2),
+    Tmax = ifelse(all(is.na(Temp)), NA, round(max(Temp, na.rm = TRUE), 2)),
+    Tmin = ifelse(all(is.na(Temp)), NA, round(min(Temp, na.rm = TRUE), 2)),
+    SD = round(sd(Temp, na.rm = TRUE), 2)
+  )
 
 #Missing Data again likely a QA/QC issue? - Erik
-df5a <- df5a %>% subset(!is.na(Date)) 
+df5a <- df5a %>% 
+  subset(!is.na(Date)) 
 
 
 YF.period<-seq(min(df5$Date, na.rm=T),max(df5$Date, na.rm=T), by="day") #maximum study period across all sites
