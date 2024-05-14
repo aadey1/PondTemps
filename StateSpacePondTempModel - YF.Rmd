@@ -14,6 +14,7 @@ Exploring the state-space model framework using code based on 'Activity 6 - Stat
 # Set up the working space for the analysis
 
 ## Load in packages
+
 ```{r}
 library(rjags)
 library(daymetr)
@@ -43,7 +44,8 @@ YF_WaterTemp <- YF_Temps %>%
 
 ## Part 1 - Model with only the water temperature in it
 
-### Pull in the data we want to analyze 
+### Pull in the data we want to analyze
+
 Here this is set up as just one pond and temperature data
 
 ```{r}
@@ -66,7 +68,7 @@ Process Model - relates the state of the system at one point in time to the stat
 
 Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
 
-### Setting up the random walk 
+### Setting up the random walk
 
 ```{r}
 RandomWalk = "
@@ -90,19 +92,20 @@ model{
 "
 ```
 
-### Next we need to define the data and priors as a list. 
+### Next we need to define the data and priors as a list.
 
 ```{r}
 data <- list(y=y$MP1,n=length(y),     ## data
-             x_ic=1,tau_ic=1, ## initial condition prior
+             x_ic=1,tau_ic=1,           ## initial condition prior
              a_obs=1,r_obs=1,           ## obs error prior
              a_add=1,r_add=1            ## process error prior
              )
 ```
 
-### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data. 
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
 
 AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
 ```{r}
 nchain = 3
 init <- list()
@@ -128,7 +131,7 @@ j.model   <- jags.model (file = textConnection(RandomWalk),
 ```{r, fig.asp = 1.0}
 ## burn-in
 jags.out   <- coda.samples (model = j.model,
-                            variable.names = c("tau_add","tau_obs", "beta0"),
+                            variable.names = c("tau_add","tau_obs"),
                                 n.iter = 1000)
 plot(jags.out)
 ```
@@ -149,9 +152,10 @@ jags.out   <- coda.samples (model = j.model,
 time.rng = c(1,length(time))       ## adjust to zoom in and out
 out <- as.matrix(jags.out)         ## convert from coda to matrix  
 x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
-ci <- apply(exp(out[,x.cols]),2,quantile,c(0.025,0.5,0.975)) ## model was fit on log scale
+ci <- apply(out[,x.cols],2,quantile,c(0.025,0.5,0.975)) ## model was fit on log scale -- AA think I can skip this since I got rid of the log transformation
+ci <- apply(data.frame(out[, x.cols]), 2, quantile, c(0.025, 0.5, 0.975))
 
-plot(time,ci[2,],type='n',ylim=range(y,na.rm=TRUE),ylab="Flu Index",log='y',xlim=time[time.rng])
+plot(time,ci[2,],type='n',ylim=range(y,na.rm=TRUE),ylab="Water Temp",log='y',xlim=time[time.rng])
 ## adjust x-axis label to be monthly if zoomed
 if(diff(time.rng) < 100){ 
   axis.Date(1, at=seq(time[time.rng[1]],time[time.rng[2]],by='month'), format = "%Y-%m")
@@ -160,7 +164,7 @@ ecoforecastR::ciEnvelope(time,ci[1,],ci[3,],col=ecoforecastR::col.alpha("lightBl
 points(time,y,pch="+",cex=0.5)
 ```
 
-### Next, lets look at the posterior distributions for `tau_add` and `tau_obs`, which we'll convert from precisions back into **standard deviations**. 
+### Next, lets look at the posterior distributions for `tau_add` and `tau_obs`, which we'll convert from precisions back into **standard deviations**.
 
 ```{r}
 hist(1/sqrt(out[,1]),main=colnames(out)[1])
@@ -187,7 +191,7 @@ y = YF_WaterTemp %>%
   select(MP1, MP3)
 ```
 
-### Trying to include more of the ponds here instead of just the one like above 
+### Trying to include more of the ponds here instead of just the one like above
 
 ```{r}
 RandomWalk_all = "
@@ -219,8 +223,10 @@ model{
 "
 ```
 
-### Next we need to define the data and priors as a list. 
+### Next we need to define the data and priors as a list.
+
 This should be for the RandonWalk_all now
+
 ```{r}
 data <- list(y=y, n=nrow(y), q=ncol(y),    ## data
              x_ic=0,tau_ic=0.2,
@@ -229,14 +235,15 @@ data <- list(y=y, n=nrow(y), q=ncol(y),    ## data
              )
 ```
 
-### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data. 
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
 
 AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
 ```{r}
 nchain = 3
 init <- list()
 for(i in 1:nchain){
-  vect <- c(y$MP1)
+  vect <- c(y$MP1, y$MP3)
   y.samp = sample(vect,length(vect),replace=TRUE)
   init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
                     tau_obs=5/var(y.samp))        ## initial guess on obs precision
@@ -289,7 +296,7 @@ ecoforecastR::ciEnvelope(time,ci[1,],ci[3,],col=ecoforecastR::col.alpha("lightBl
 points(time,y,pch="+",cex=0.5)
 ```
 
-### Next, lets look at the posterior distributions for `tau_add` and `tau_obs`, which we'll convert from precisions back into **standard deviations**. 
+### Next, lets look at the posterior distributions for `tau_add` and `tau_obs`, which we'll convert from precisions back into **standard deviations**.
 
 ```{r}
 hist(1/sqrt(out[,1]),main=colnames(out)[1])
@@ -320,9 +327,11 @@ y = YF_WaterTemp %>%
 temp = YF_AirTemp %>%
   select(Air_MonthAvg)
 ```
+
 ### Setting up the random walk
+
 ```{r}
-RandomWalk = "
+RandomWalk_Temp = "
 model{
   
   #### Data Model
@@ -344,13 +353,12 @@ model{
 "
 ```
 
-
 # Adding in temperature here for the Yakutat Forelands
 
 ### Setting up the random walk --> added in the air temperature here with only one pond
 
 ```{r}
-RandomWalk = "
+RandomWalk_Temp = "
 model{
   
   #### Data Model
@@ -361,34 +369,38 @@ model{
   #### Process Model
   for(t in 2:n){
     x[t]~dnorm(k[t],tau_add)
-    k[t] <- beta0[1] + beta0[2] * temp[t]
+    k[t] <- beta + delta * temp[t]
   }
   
   #### Priors
   x[1] ~ dnorm(x_ic,tau_ic)
-  beta0 ~ dmnorm(betap, sigmap)
+  beta ~ dnorm(betap, sigmab)
+  delta ~ dgamma(deltap, sigmad)
   tau_obs ~ dgamma(a_obs,r_obs)
   tau_add ~ dgamma(a_add,r_add)
 }
 "
 ```
 
-### Next we need to define the data and priors as a list. 
+### Next we need to define the data and priors as a list.
 
 #for 'all' now
+
 ```{r}
 data <- list(y=y$MP1,n=length(y),     ## data
-             x_ic=0,tau_ic=0.2,
-             betap=c(0,0), sigmap=diag(0.01, 2, 2),
-             temp = temp, ## initial condition prior
+             x_ic=0,tau_ic=0.2,      ## initial condition prior
+             betap=0, sigmab=0.01,
+             deltap=1, sigmad = 0.01,
+             temp = temp, 
              a_obs=1,r_obs=1,           ## obs error prior
              a_add=1,r_add=1            ## process error prior
              )
 ```
 
-### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data. 
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
 
 AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
 ```{r}
 nchain = 3
 init <- list()
@@ -403,7 +415,7 @@ for(i in 1:nchain){
 ### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
 
 ```{r}
-j.model   <- jags.model (file = textConnection(RandomWalk),
+j.model   <- jags.model (file = textConnection(RandomWalk_Temp),
                              data = data,
                              inits = init,
                              n.chains = 3)
@@ -414,7 +426,7 @@ j.model   <- jags.model (file = textConnection(RandomWalk),
 ```{r, fig.asp = 1.0}
 ## burn-in
 jags.out   <- coda.samples (model = j.model,
-                            variable.names = c("tau_add","tau_obs", "beta0"),
+                            variable.names = c("tau_add","tau_obs", "beta", "delta"),
                                 n.iter = 1000)
 plot(jags.out)
 ```
@@ -446,7 +458,7 @@ ecoforecastR::ciEnvelope(time,ci[1,],ci[3,],col=ecoforecastR::col.alpha("lightBl
 points(time,y,pch="+",cex=0.5)
 ```
 
-###Next, lets look at the posterior distributions for `tau_add` and `tau_obs`, which we'll convert from precisions back into **standard deviations**. 
+###Next, lets look at the posterior distributions for `tau_add` and `tau_obs`, which we'll convert from precisions back into **standard deviations**.
 
 ```{r}
 hist(1/sqrt(out[,1]),main=colnames(out)[1])
@@ -459,16 +471,3 @@ hist(1/sqrt(out[,2]),main=colnames(out)[2])
 plot(out[,1],out[,2],pch=".",xlab=colnames(out)[1],ylab=colnames(out)[2])
 cor(out[,1:2])
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
