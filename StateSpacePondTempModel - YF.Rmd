@@ -41,7 +41,10 @@ YF_WaterTemp <- YF_Temps %>%
 
 # Starting the Analysis
 
-## Pull in the data we want to analyze and plot it
+## Part 1 - Model with only the water temperature in it
+
+### Pull in the data we want to analyze 
+Here this is set up as just one pond and temperature data
 
 ```{r}
 YF_WaterTemp
@@ -52,21 +55,18 @@ time <- as.Date(YF_WaterTemp$`Month-Year`, "%m-%Y")
 # Choose one pond to plot through time -- MP1
 y = YF_WaterTemp %>%
   select(MP1)
-plot()
 
-temp = YF_AirTemp %>%
-  select(Air_MonthAvg)
 ```
 
-# The code itself has three components, the data model, the process model, and the priors.
+The code itself has three components, the data model, the process model, and the priors.
 
-## Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
 
-## Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
 
-## Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
 
-### Setting up the random walk --> added in the air temperature here
+### Setting up the random walk 
 
 ```{r}
 RandomWalk = "
@@ -79,8 +79,7 @@ model{
   
   #### Process Model
   for(t in 2:n){
-    x[t]~dnorm(k[t-1],tau_add)
-    k[t-1] <- beta0 + m * temp[t-1]
+    x[t]~dnorm(x[t-1],tau_add)
   }
   
   #### Priors
@@ -91,7 +90,104 @@ model{
 "
 ```
 
-# Trying to include more of the ponds here instead of just the one like above 
+### Next we need to define the data and priors as a list. 
+
+```{r}
+data <- list(y=y$MP1,n=length(y),     ## data
+             x_ic=1,tau_ic=1, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data. 
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y$MP1)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs", "beta0"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+time.rng = c(1,length(time))       ## adjust to zoom in and out
+out <- as.matrix(jags.out)         ## convert from coda to matrix  
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(exp(out[,x.cols]),2,quantile,c(0.025,0.5,0.975)) ## model was fit on log scale
+
+plot(time,ci[2,],type='n',ylim=range(y,na.rm=TRUE),ylab="Flu Index",log='y',xlim=time[time.rng])
+## adjust x-axis label to be monthly if zoomed
+if(diff(time.rng) < 100){ 
+  axis.Date(1, at=seq(time[time.rng[1]],time[time.rng[2]],by='month'), format = "%Y-%m")
+}
+ecoforecastR::ciEnvelope(time,ci[1,],ci[3,],col=ecoforecastR::col.alpha("lightBlue",0.75))
+points(time,y,pch="+",cex=0.5)
+```
+
+### Next, lets look at the posterior distributions for `tau_add` and `tau_obs`, which we'll convert from precisions back into **standard deviations**. 
+
+```{r}
+hist(1/sqrt(out[,1]),main=colnames(out)[1])
+hist(1/sqrt(out[,2]),main=colnames(out)[2])
+```
+
+### We'll also want to look at the joint distribution of the two parameters to check whether the two parameters strongly covary.
+
+```{r, fig.asp = 1.0}
+plot(out[,1],out[,2],pch=".",xlab=colnames(out)[1],ylab=colnames(out)[2])
+cor(out[,1:2])
+```
+
+## Part 2 - Adding in more than one pond
+
+```{r}
+YF_WaterTemp
+
+# pulling out the dates here
+time <- as.Date(YF_WaterTemp$`Month-Year`, "%m-%Y")
+
+# Choose one pond to plot through time -- MP1
+y = YF_WaterTemp %>%
+  select(MP1, MP3)
+```
+
+### Trying to include more of the ponds here instead of just the one like above 
 
 ```{r}
 RandomWalk_all = "
@@ -122,6 +218,132 @@ model{
 }
 "
 ```
+
+### Next we need to define the data and priors as a list. 
+This should be for the RandonWalk_all now
+```{r}
+data <- list(y=y, n=nrow(y), q=ncol(y),    ## data
+             x_ic=0,tau_ic=0.2,
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data. 
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y$MP1)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk_all),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+time.rng = c(1,length(time))       ## adjust to zoom in and out
+out <- as.matrix(jags.out)         ## convert from coda to matrix  
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(exp(out[,x.cols]),2,quantile,c(0.025,0.5,0.975)) ## model was fit on log scale
+
+plot(time,ci[2,],type='n',ylim=range(y,na.rm=TRUE),ylab="Flu Index",log='y',xlim=time[time.rng])
+## adjust x-axis label to be monthly if zoomed
+if(diff(time.rng) < 100){ 
+  axis.Date(1, at=seq(time[time.rng[1]],time[time.rng[2]],by='month'), format = "%Y-%m")
+}
+ecoforecastR::ciEnvelope(time,ci[1,],ci[3,],col=ecoforecastR::col.alpha("lightBlue",0.75))
+points(time,y,pch="+",cex=0.5)
+```
+
+### Next, lets look at the posterior distributions for `tau_add` and `tau_obs`, which we'll convert from precisions back into **standard deviations**. 
+
+```{r}
+hist(1/sqrt(out[,1]),main=colnames(out)[1])
+hist(1/sqrt(out[,2]),main=colnames(out)[2])
+```
+
+### We'll also want to look at the joint distribution of the two parameters to check whether the two parameters strongly covary.
+
+```{r, fig.asp = 1.0}
+plot(out[,1],out[,2],pch=".",xlab=colnames(out)[1],ylab=colnames(out)[2])
+cor(out[,1:2])
+```
+
+## Part 3 - Back to one pond, but with temperature as a covariate
+
+### Pull in the data we want to analyze
+
+```{r}
+YF_WaterTemp
+
+# pulling out the dates here
+time <- as.Date(YF_WaterTemp$`Month-Year`, "%m-%Y")
+
+# Choose one pond to plot through time -- MP1
+y = YF_WaterTemp %>%
+  select(MP1)
+
+temp = YF_AirTemp %>%
+  select(Air_MonthAvg)
+```
+### Setting up the random walk
+```{r}
+RandomWalk = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+  for(t in 2:n){
+    x[t]~dnorm(k[t-1],tau_add)
+    k[t-1] <- beta0 + m * temp[t-1]
+  }
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
 
 # Adding in temperature here for the Yakutat Forelands
 
@@ -166,7 +388,7 @@ data <- list(y=y$MP1,n=length(y),     ## data
 
 ### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data. 
 
-# AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
 ```{r}
 nchain = 3
 init <- list()
