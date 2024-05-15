@@ -175,24 +175,37 @@ df5$Date<-as.Date(df5$Date,format="%m/%d/%Y") #format date
 df5$Region<-"YF"
 
 summary(df5)
+str(df5)
+dim(df5)
+
+library(dplyr)
+unloadNamespace("reshape2")
+unloadNamespace("plyr")
+
+# Check the unique combination of Date and site
+unique_combinations <- df5 %>%
+  select(Date, site) %>%
+  distinct()
+
+# Count the number of unique combinations
+nrow(unique_combinations)
 
 df5a <- df5 %>%
   group_by(Date, site) %>%
   summarise(
     Tmean = round(mean(Temp, na.rm = TRUE), 2),
-    Tmax = ifelse(all(is.na(Temp)), NA, round(max(Temp, na.rm = TRUE), 2)),
-    Tmin = ifelse(all(is.na(Temp)), NA, round(min(Temp, na.rm = TRUE), 2)),
+    Tmax = ifelse(all(is.na(Temp)), NA_real_, round(max(Temp, na.rm = TRUE), 2)),
+    Tmin = ifelse(all(is.na(Temp)), NA_real_, round(min(Temp, na.rm = TRUE), 2)),
     SD = round(sd(Temp, na.rm = TRUE), 2)
-  )
+  ) %>%
+  ungroup()
 
-#Missing Data again likely a QA/QC issue? - Erik
-df5a <- df5a %>% 
-  subset(!is.na(Date)) 
 
 
 YF.period<-seq(min(df5$Date, na.rm=T),max(df5$Date, na.rm=T), by="day") #maximum study period across all sites
 YF.df<-data.frame("site"=rep(unique(df5a$site),each=length(YF.period)),"Date"=rep(YF.period, times= length(unique(df5a$site))))
 df5b<-merge(YF.df,df5a, by=c("Date","site"), all.x=T)
+library(reshape2)
 ```
 
 ### Create a plot of the mean temp through time
@@ -217,12 +230,18 @@ ggsave("YK_air_temps.png", path=plot.folder, width=8.5, height=6, units="in",dpi
 df5b <- df5b %>%
   mutate(monyr = format(Date, "%m-%Y"))
 
+library(dplyr)
+unloadNamespace("reshape2")
+unloadNamespace("plyr")
+
 df5c <- df5b %>%
   group_by(site, monyr) %>%
   summarise(monavg = round(mean(Tmean, na.rm = TRUE), 2),
             monmax = if(anyNA(Tmax)) NA else round(max(Tmax, na.rm = TRUE), 2),
             monmin = if(anyNA(Tmin)) NA else round(min(Tmin, na.rm = TRUE), 2),
             .groups = 'drop')
+
+library(reshape2)
 
 #merge Yakutat dat with weather dat
 df5d<-merge(df5c,subset(met3, NAME=="YAKUTAT AIRPORT"), by="monyr",all.x=T)
@@ -343,15 +362,20 @@ df1$Region<-"YF"
 
 summary(df1)
 
+library(dplyr)
+unloadNamespace("reshape2")
+unloadNamespace("plyr")
+
 df1a <- df1 %>%
   group_by(Date, site) %>%
   summarise(
     Tmean = round(mean(Temp, na.rm = TRUE), 2),
     Tmax = round(max(Temp, na.rm = TRUE), 2),
     Tmin = round(min(Temp, na.rm = TRUE), 2),
-    SD = round(sd(Temp, na.rm = TRUE), 2),
-    Region = unique(Region)
+    SD = round(sd(Temp, na.rm = TRUE), 2)
   )
+
+library(reshape2)
 
 YF.period<-seq(min(df1$Date, na.rm=T),max(df1$Date, na.rm=T), by="day") #maximum study period across all sites
 YF.df<-data.frame("site"=rep(unique(df1a$site),each=length(YF.period)),"Date"=rep(YF.period, times= length(unique(df1a$site))))
@@ -632,11 +656,11 @@ CR_PondAirTemp_min <- CR_AirPondData %>%
 # Part 6 - Save the data files as .csv files to be loaded into other code here
 
 ```{r}
-write.csv(CR_PondAirTemp_min, file = "CR_PondAirTeimp_min")
-write.csv(CR_PondAirTemp_max, file = "CR_PondAirTeimp_max")
-write.csv(CR_PondAirTemp_mean, file = "CR_PondAirTeimp_mean")
+write.csv(CR_PondAirTemp_min, file = "CR_PondAirTeimp_min.csv")
+write.csv(CR_PondAirTemp_max, file = "CR_PondAirTeimp_max.csv")
+write.csv(CR_PondAirTemp_mean, file = "CR_PondAirTeimp_mean.csv")
 
-write.csv(YF_PondAirTemp_min, file = "YF_PondAirTeimp_min")
-write.csv(YF_PondAirTemp_max, file = "YF_PondAirTeimp_max")
-write.csv(YF_PondAirTemp_mean, file = "YF_PondAirTeimp_mean")
+write.csv(YF_PondAirTemp_min, file = "YF_PondAirTeimp_min.csv")
+write.csv(YF_PondAirTemp_max, file = "YF_PondAirTeimp_max.csv")
+write.csv(YF_PondAirTemp_mean, file = "YF_PondAirTeimp_mean.csv")
 ```

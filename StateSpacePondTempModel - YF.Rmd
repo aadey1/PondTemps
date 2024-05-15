@@ -353,9 +353,7 @@ model{
 "
 ```
 
-# Adding in temperature here for the Yakutat Forelands
-
-### Setting up the random walk --> added in the air temperature here with only one pond
+### Setting up the random walk --> Adding in temperature here for the Yakutat Forelands
 
 ```{r}
 RandomWalk_Temp = "
@@ -383,8 +381,6 @@ model{
 ```
 
 ### Next we need to define the data and priors as a list.
-
-#for 'all' now
 
 ```{r}
 data <- list(y=y$MP1,n=length(y),     ## data
@@ -437,7 +433,7 @@ Now that the model has converged we'll want to take a much larger sample from th
 
 ```{r}
 jags.out   <- coda.samples (model = j.model,
-                            variable.names = c("x","tau_add","tau_obs"),
+                            variable.names = c("x","tau_add","tau_obs", "delta", "beta"),
                                 n.iter = 10000)
 ```
 
