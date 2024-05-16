@@ -656,11 +656,11 @@ CR_PondAirTemp_min <- CR_AirPondData %>%
 # Part 6 - Save the data files as .csv files to be loaded into other code here
 
 ```{r}
-write.csv(CR_PondAirTemp_min, file = "CR_PondAirTeimp_min.csv")
-write.csv(CR_PondAirTemp_max, file = "CR_PondAirTeimp_max.csv")
-write.csv(CR_PondAirTemp_mean, file = "CR_PondAirTeimp_mean.csv")
+write.csv(CR_PondAirTemp_min, file = "CR_PondAirTemp_min.csv")
+write.csv(CR_PondAirTemp_max, file = "CR_PondAirTemp_max.csv")
+write.csv(CR_PondAirTemp_mean, file = "CR_PondAirTemp_mean.csv")
 
-write.csv(YF_PondAirTemp_min, file = "YF_PondAirTeimp_min.csv")
-write.csv(YF_PondAirTemp_max, file = "YF_PondAirTeimp_max.csv")
-write.csv(YF_PondAirTemp_mean, file = "YF_PondAirTeimp_mean.csv")
+write.csv(YF_PondAirTemp_min, file = "YF_PondAirTemp_min.csv")
+write.csv(YF_PondAirTemp_max, file = "YF_PondAirTemp_max.csv")
+write.csv(YF_PondAirTemp_mean, file = "YF_PondAirTemp_mean.csv")
 ```

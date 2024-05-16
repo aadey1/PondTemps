@@ -22,12 +22,17 @@ library(ecoforecastR)
 library(dplyr)
 library(lubridate)
 library(zoo)
+library(ggplot2)
 ```
 
 ## Start by loading in the Yakutat Forelands mean data set
 
 ```{r}
-YF_Temps <- YF_PondAirTemp_mean
+YF_Temps <- read.csv("YF_PondAirTemp_mean.csv", header=TRUE)
+
+YF_Temps <- YF_Temps %>%
+  rename(`Month-Year` = Month.Year) %>%
+  select(-c(1))
 ```
 
 ## Separate the data into the air temp and the water temp data
@@ -57,6 +62,7 @@ time <- as.Date(YF_WaterTemp$`Month-Year`, "%m-%Y")
 # Choose one pond to plot through time -- MP1
 y = YF_WaterTemp %>%
   select(MP1)
+y
 
 ```
 
@@ -149,6 +155,7 @@ jags.out   <- coda.samples (model = j.model,
 ### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
 
 ```{r}
+## THIS CHUNK OF CODE DOES NOT WORK CORRECTLY -- USED CODE BELOW INSTEAD
 time.rng = c(1,length(time))       ## adjust to zoom in and out
 out <- as.matrix(jags.out)         ## convert from coda to matrix  
 x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
@@ -162,6 +169,56 @@ if(diff(time.rng) < 100){
 }
 ecoforecastR::ciEnvelope(time,ci[1,],ci[3,],col=ecoforecastR::col.alpha("lightBlue",0.75))
 points(time,y,pch="+",cex=0.5)
+```
+### Plotting a reconstruction of the fitted line to the air temp-water temp data
+
+Do this by looping through each iteraction of the MCMC output, each of which has a value for each parameter in your process equation, and making the fitted points by hand.
+
+```{r}
+# THIS CODE IS ADAPTED TO PART 3 BUT CAN BE UPDATED FOR THIS
+out <- as.matrix(jags.out)       ## convert from coda to matrix  
+N_sim = 10000
+
+# Initialize vectors to store results
+x <- numeric(N_sim)
+predicted_lake_temp <- numeric(N_sim)
+observed_lake_temp <- numeric(N_sim)
+
+# Loop through each row of the output matrix
+for(i in 1:N_sim) {
+  x[i] <- out[i, "tau_add"] # extract the estimated latent variable at the previous time step
+  predicted_lake_temp[i] <- x[i]
+}
+
+str(predicted_lake_temp) # this now had a vector for each iteration and then will need to summarize this to make it work for plotting
+
+library(dplyr)
+library(purrr)
+# Extract the first element from each vector in predicted_lake_temp and calculate the average
+average_values <- numeric(73)
+
+# Loop through each position (1 to 73)
+for (i in 1:73) {
+  # Extract values at position i from all vectors in predicted_lake_temp
+  values <- sapply(predicted_lake_temp, `[`, i)
+  # Calculate the average for position i
+  average_values[i] <- mean(values, na.rm = TRUE)
+}
+
+# Plot the average values
+plot(average_values, type = "l", col = "blue",
+     main = "Average Predicted Lake Temperature",
+     xlab = "Time Step", ylab = "Average Temperature")
+
+# Plot each element of predicted_lake_temp
+#for (i in 1:length(predicted_lake_temp)) {
+#  plot(predicted_lake_temp[[i]], type = "l", col = "blue", ylim = c(-1000, 1000),
+#       main = "Predicted Lake Temperature", xlab = "Time Step", ylab = "Temperature")
+#}
+
+# Add a legend
+#legend("topright", legend = 1:length(predicted_lake_temp), col = "blue", lty = 1, title = "Iteration")
+
 ```
 
 ### Next, lets look at the posterior distributions for `tau_add` and `tau_obs`, which we'll convert from precisions back into **standard deviations**.
@@ -318,7 +375,8 @@ cor(out[,1:2])
 YF_WaterTemp
 
 # pulling out the dates here
-time <- as.Date(YF_WaterTemp$`Month-Year`, "%m-%Y")
+
+time <- as.Date(paste0("01-", YF_WaterTemp$`Month-Year`), format = "%d-%m-%Y")
 
 # Choose one pond to plot through time -- MP1
 y = YF_WaterTemp %>%
@@ -326,12 +384,20 @@ y = YF_WaterTemp %>%
 
 temp = YF_AirTemp %>%
   select(Air_MonthAvg)
+
+plotData <- y %>%
+  mutate(time = time)
+
+ggplot(data = plotData, aes(x = time, y = MP1))+
+  geom_point()+
+  theme_bw()
 ```
+## Part 4 Going back to the code from Alyssa
 
-### Setting up the random walk
-
+### Setting up the random walk --> added in the air temperature here
+ This option adds it so the beta0 and m are separate named variables
 ```{r}
-RandomWalk_Temp = "
+RandomWalk = "
 model{
   
   #### Data Model
@@ -353,8 +419,7 @@ model{
 "
 ```
 
-### Setting up the random walk --> Adding in temperature here for the Yakutat Forelands
-
+This option sets it up with the matrix of betas
 ```{r}
 RandomWalk_Temp = "
 model{
@@ -367,27 +432,24 @@ model{
   #### Process Model
   for(t in 2:n){
     x[t]~dnorm(k[t],tau_add)
-    k[t] <- beta + delta * temp[t]
+    k[t] <- beta0[1] + beta0[2] * temp[t]
   }
   
   #### Priors
   x[1] ~ dnorm(x_ic,tau_ic)
-  beta ~ dnorm(betap, sigmab)
-  delta ~ dgamma(deltap, sigmad)
+  beta0 ~ dmnorm(betap, sigmap)
   tau_obs ~ dgamma(a_obs,r_obs)
   tau_add ~ dgamma(a_add,r_add)
 }
 "
 ```
 
-### Next we need to define the data and priors as a list.
-
+### Next we need to define the data and priors as a list. 
 ```{r}
 data <- list(y=y$MP1,n=length(y),     ## data
-             x_ic=0,tau_ic=0.2,      ## initial condition prior
-             betap=0, sigmab=0.01,
-             deltap=1, sigmad = 0.01,
-             temp = temp, 
+             x_ic=0,tau_ic=0.2,
+             betap=c(0,0), sigmap=diag(0.01, 2, 2),
+             temp = temp, ## initial condition prior
              a_obs=1,r_obs=1,           ## obs error prior
              a_add=1,r_add=1            ## process error prior
              )
@@ -433,17 +495,18 @@ Now that the model has converged we'll want to take a much larger sample from th
 
 ```{r}
 jags.out   <- coda.samples (model = j.model,
-                            variable.names = c("x","tau_add","tau_obs", "delta", "beta"),
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
                                 n.iter = 10000)
 ```
 
 ### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
 
 ```{r}
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
 time.rng = c(1,length(time))       ## adjust to zoom in and out
 out <- as.matrix(jags.out)         ## convert from coda to matrix  
 x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
-ci <- apply(exp(out[,x.cols]),2,quantile,c(0.025,0.5,0.975)) ## model was fit on log scale
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975)) ## Remove log scale
 
 plot(time,ci[2,],type='n',ylim=range(y,na.rm=TRUE),ylab="Flu Index",log='y',xlim=time[time.rng])
 ## adjust x-axis label to be monthly if zoomed
@@ -452,6 +515,58 @@ if(diff(time.rng) < 100){
 }
 ecoforecastR::ciEnvelope(time,ci[1,],ci[3,],col=ecoforecastR::col.alpha("lightBlue",0.75))
 points(time,y,pch="+",cex=0.5)
+```
+
+### Plotting a reconstruction of the fitted line to the air temp-water temp data
+
+Do this by looping through each iteraction of the MCMC output, each of which has a value for each parameter in your process equation, and making the fitted points by hand.
+
+```{r}
+# THIS CODE IS ADAPTED TO PART 3 BUT CAN BE UPDATED FOR THIS    ## adjust to zoom in and out
+out <- as.matrix(jags.out)       ## convert from coda to matrix  
+N_sim = 10000
+
+# Initialize vectors to store results
+x <- numeric(N_sim)
+predicted_lake_temp <- numeric(N_sim)
+
+# Loop through each row of the output matrix
+for(i in 1:N_sim) {
+  beta <- out[i, "beta0[1]"] # extract the value of beta for a given iteration from the output matrix
+  delta <- out[i, "beta0[2]"] # extract the value of delta for a given iteration from the output matrix
+  x[i] <- out[i, "tau_add"] # extract the estimated latent variable at the previous time step
+  predicted_lake_temp[i] <- beta * x[i] + delta * temp
+}
+
+str(predicted_lake_temp) # this now had a vector for each iteration and then will need to summarize this to make it work for plotting
+
+library(dplyr)
+library(purrr)
+# Extract the first element from each vector in predicted_lake_temp and calculate the average
+average_values <- numeric(73)
+
+# Loop through each position (1 to 73)
+for (i in 1:73) {
+  # Extract values at position i from all vectors in predicted_lake_temp
+  values <- sapply(predicted_lake_temp, `[`, i)
+  # Calculate the average for position i
+  average_values[i] <- mean(values, na.rm = TRUE)
+}
+
+# Plot the average values
+predictedWaterTemp <- plot(average_values, type = "l", col = "blue",
+     main = "Average Predicted Lake Temperature",
+     xlab = "Time Step", ylab = "Average Temperature")
+
+# Plot each element of predicted_lake_temp -- makes 10000 plots as is
+#for (i in 1:length(predicted_lake_temp)) {
+#  plot(predicted_lake_temp[[i]], type = "l", col = "blue", ylim = c(-1000, 1000),
+#       main = "Predicted Lake Temperature", xlab = "Time Step", ylab = "Temperature")
+#}
+
+# Add a legend
+#legend("topright", legend = 1:length(predicted_lake_temp), col = "blue", lty = 1, title = "Iteration")
+
 ```
 
 ###Next, lets look at the posterior distributions for `tau_add` and `tau_obs`, which we'll convert from precisions back into **standard deviations**.
@@ -467,3 +582,88 @@ hist(1/sqrt(out[,2]),main=colnames(out)[2])
 plot(out[,1],out[,2],pch=".",xlab=colnames(out)[1],ylab=colnames(out)[2])
 cor(out[,1:2])
 ```
+This shows that this doesnt work well since there is a strange relationship with the pond across years that looks more like within year
+
+# Part 5 - Trying to use the Tree Rings and Forest Inventory Example from Alyssa to set this up for the ponds
+
+In this excercise we will extend the state-space framework to combine multipel data streams with different observation errors and to separate observation error from process error. We will also demonstrate how to add hierarchical random effects to partition the process error into multiple sources
+
+Steps that this analysis is divided into here:
+1. Load "forest inventory data"
+2. Load "tree ring data"
+3. Match the tree core and inventory data for individual trees and merge these data sets into one data frame
+4. Format this data into a list for input into JAGS
+5. Run the JAGS model 
+6. Visualize the output
+
+```{r}
+library(rjags)
+library(ecoforecastR)
+```
+
+### This section can be skipped -- but need to sort out how to organize the YF data plots
+Steps 1-4 have already been done for you and leverages functions that are part of the [PEcAn system](https://pecanproject.org). Specifically, they are within PEcAn's land data R package, which can be downloaded and installed off Github using `remotes` or `devtools`. Because these steps have been done fore you, you don't need to run the following chunk of code.
+
+```
+if(!require(PEcAn.data.land)){
+  library(remotes)
+  install.packages(c("digest","dplR","PeriodicTable"),repos = "https://cloud.r-project.org")
+  remotes::install_github("PecanProject/pecan/base/logger")
+  remotes::install_github("PecanProject/pecan/base/remote")
+  remotes::install_github("PecanProject/pecan/base/utils")
+  remotes::install_github("PecanProject/pecan/base/db")
+  remotes::install_github("PecanProject/pecan/modules/data.land")
+  library(PEcAn.data.land)
+}
+
+## 1. Read tree data
+trees <- read.csv("data/H2012AdultFieldData.csv")
+
+## 2. Read tree ring data
+rings <- Read_Tucson("data/TUCSON/")
+
+## 3. merge inventory and tree ring data, extract most recent nyears
+combined <- matchInventoryRings(trees,rings,nyears=15)
+
+## take a look at the first few rows of data to see the structure
+knitr::kable(combined[1:5,])
+
+## 4. organize data into a list
+data <- buildJAGSdata_InventoryRings(combined)
+
+## Load in thier 
+
+```
+Instead we'll just load and investigate the final, prepared data object
+
+## Check the format here to see how to format the pond temp data
+```{r}
+load("Activity07.RData")
+# y = increment (tree x year)
+# z = dbh (tree x year)
+# ni = number of individuals
+# nt = number of time points
+# make sure to take a look at all the priors!
+str(data)
+knitr::kable(head(data$y))
+knitr::kable(head(data$z))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
