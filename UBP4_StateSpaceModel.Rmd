@@ -32,19 +32,23 @@ library(ggplot2)
 ```{r}
 YF_Temps <- read.csv("YF_PondAirTemp_mean.csv", header=TRUE)
 
-# remove the first column here
+library(dplyr)
+# remove the first column here and change the column for Date to date
+  # Date is a function of some sort so could be the source of errors
 YF_Temps <- YF_Temps %>%
-  select(-c(1))
+  rename(date=Date)
+YF_Temps <- YF_Temps[,-1]
+head(YF_Temps)
 ```
 
 ## Separate the data into the air temp and the water temp data
 
 ```{r}
 YF_AirTemp <- YF_Temps %>%
-  select(Date, Airport, Air_MonthAvg, Region)
+  select(date, Airport, Air_MonthAvg, Region)
 
 YF_WaterTemp <- YF_Temps %>%
-  select(Date, MP1, MP3, PL3, PL2, UBP3, MP5, MP8, UBP1, UBP2, PL1, UBP4)
+  select(date, MP1, MP3, PL3, PL2, UBP3, MP5, MP8, UBP1, UBP2, PL1, UBP4)
 ```
 
 ## Going to attempt to plot the water temperature and the air temperature over time
@@ -54,9 +58,33 @@ head(YF_Temps)
 
 library(ggplot2)
 
+# plotting this --> shows up as 'blank'
 ggplot(YF_Temps)+
-  geom_line(data = YF_Temps, aes(x = Date, y = Air_MonthAvg, color = 'red', linetype = "solid"))+
-  geom_line(data = YF_Temps, aes(x = Date, y = UBP4, color = 'blue', linetype = "dashed"))
+  geom_line(data = YF_Temps, aes(x = date, y = Air_MonthAvg, color = 'red', linetype = "solid"))+
+  geom_line(data = YF_Temps, aes(x = date, y = UBP4, color = 'blue', linetype = "dashed"))
+
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# Reshape the data from wide to long format
+YF_Temps_long <- YF_Temps %>%
+  pivot_longer(cols = c(MP1, MP3, PL3, PL2, UBP3, MP5, MP8, UBP1, UBP2, PL1, UBP4),
+               names_to = "variable",
+               values_to = "value")
+
+# Check the structure of the reshaped data
+str(YF_Temps_long)
+
+# Create the plot
+ggplot(YF_Temps_long, aes(x = as.Date(date), y = value, color = variable)) +
+  geom_line() +
+  labs(title = "Pond Water Temperature Over Time",
+       x = "Date",
+       y = "Value",
+       color = "Variable") +
+  theme_minimal()
 
 ```
 
