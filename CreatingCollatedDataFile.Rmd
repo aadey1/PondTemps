@@ -241,7 +241,14 @@ df5c <- df5b %>%
             monmin = if(anyNA(Tmin)) NA else round(min(Tmin, na.rm = TRUE), 2),
             .groups = 'drop')
 
-library(reshape2)
+met3 <- met2b %>%
+  group_by(NAME, monyr) %>%
+  summarise(
+    Amonavg = round(mean(TAVG2, na.rm = TRUE), 2),
+    Amonmax = round(max(TMAX, na.rm = TRUE), 2),
+    Amonmin = round(min(TMIN, na.rm = TRUE), 2)
+  ) %>%
+  ungroup()
 
 #merge Yakutat dat with weather dat
 df5d<-merge(df5c,subset(met3, NAME=="YAKUTAT AIRPORT"), by="monyr",all.x=T)
@@ -525,12 +532,20 @@ df2c <- df2a %>%
 
 ```{r}
 #merge Yakutat dat with weather dat
-df1d<-merge(df1c,subset(met3, NAME=="YAKUTAT AIRPORT"), by="monyr",all.x=T)
+# Subset met3 where Airport is "YAKUTAT AIRPORT"
+YF_subset_met3 <- subset(met3, NAME == "YAKUTAT AIRPORT")
+
+# Perform the left join with subset_met3 as the left data frame
+df1d <- merge(YF_subset_met3, df1c, by = "monyr", all.x = TRUE)
 df1d$Region<-"YF" #restore region column in prep for merge with Copper River data.
 
-#merge Cordova dat with weather dat
-df2d<-merge(df2c,subset(met3, NAME=="CORDOVA AIRPORT"), by="monyr",all.x=T)
+# Subset met3 where Airport is "CORDOVA AIRPORT"
+CR_subset_met3 <- subset(met3, NAME == "CORDOVA AIRPORT")
+
+# Perform the left join with subset_met3 as the left data frame
+df2d <- merge(CR_subset_met3, df1c, by = "monyr", all.x = TRUE)
 df2d$Region<-"CR" #restore region column in prep for merge with Copper River data.
+
 ```
 
 ## Merge the Yakutat Forelands and Copper River Delta Files

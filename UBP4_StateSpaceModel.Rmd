@@ -32,32 +32,9 @@ library(ggplot2)
 ```{r}
 YF_Temps <- read.csv("YF_PondAirTemp_mean.csv", header=TRUE)
 
+# remove the first column here
 YF_Temps <- YF_Temps %>%
-  rename(`Month-Year` = Month.Year) %>%
   select(-c(1))
-```
-
-## Change the date to a date and sort so the date is in temporal order
-```{r}
-str(YF_Temps)
-
-# Fix the date
-test <- YF_Temps
-# pulling out the dates here
-test$`Month-Year` <- as.yearmon(test$`Month-Year`, "%m-%Y")
-test$`Month-Year` <- as.Date(as.yearmon(test$`Month-Year`, "%m-%Y"))
-
-test <- test %>%
-  rename(Date = `Month-Year`)
-
-YF_Temps <- test
-
-# Sort the dataframe by Date
-YF_Temps <- YF_Temps[order(YF_Temps$Date), ]
-
-# Reset row names
-rownames(YF_Temps) <- NULL
-
 ```
 
 ## Separate the data into the air temp and the water temp data
@@ -73,11 +50,13 @@ YF_WaterTemp <- YF_Temps %>%
 ## Going to attempt to plot the water temperature and the air temperature over time
 
 ```{r}
+head(YF_Temps)
+
+library(ggplot2)
 
 ggplot(YF_Temps)+
-  geom_line(aes(x = Date, y = Air_MonthAvg, color = 'red', linetype = "solid"))+
-  geom_line(aes(x = Date, y = UBP4, color = 'blue', linetype = "dashed")) +
-  theme_bw()
+  geom_line(data = YF_Temps, aes(x = Date, y = Air_MonthAvg, color = 'red', linetype = "solid"))+
+  geom_line(data = YF_Temps, aes(x = Date, y = UBP4, color = 'blue', linetype = "dashed"))
 
 ```
 
