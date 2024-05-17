@@ -442,11 +442,16 @@ df2$Date<-as.Date(df2$Date,format="%m/%d/%Y") #format date
 
 df2$Region<-"CR"
 
+library(plyr)
+
 #Change site names to Carmella's codes for consistency with three character Yakutat codes
 df2$site<-mapvalues(df2$site, from = c("BeaverS", "Cabin","CanneryControl", "EyakS","RHM","Square","TDN", "TDS", "Wooded"),
                     to = c("BVS","CAB","CAN", "EYS","RHM","SQR","TIN","TIS","WDD"))
 unique(df2$site)
 summary(df2)
+
+unloadNamespace("reshape2")
+unloadNamespace("plyr")
 
 df2$Date<-as.Date(df2$Date,format="%m/%d/%Y") #format date
 
@@ -598,6 +603,62 @@ YF_PondAirTemp_min <- YF_AirPondData %>%
   )
 ```
 
+### Correct the Data formats and order these by date here
+
+```{r}
+# 1. mean values
+str(YF_PondAirTemp_mean)
+  test <- YF_PondAirTemp_mean
+  # pulling out the dates here
+  test$`Month-Year` <- as.yearmon(test$`Month-Year`, "%m-%Y")
+  test$`Month-Year` <- as.Date(as.yearmon(test$`Month-Year`, "%m-%Y"))
+  test <- test %>%
+    rename(Date = `Month-Year`)
+  # save over the Original File
+  YF_PondAirTemp_mean <- test
+  # Sort the dataframe by Date
+  YF_PondAirTemp_mean <- YF_PondAirTemp_mean[order(YF_PondAirTemp_mean$Date), ]
+  # Reset row names
+  rownames(YF_PondAirTemp_mean) <- NULL
+  # check the final file
+  head(YF_PondAirTemp_mean)
+  
+# 2. max values
+str(YF_PondAirTemp_max)
+  test <- YF_PondAirTemp_max
+  # pulling out the dates here
+  test$`Month-Year` <- as.yearmon(test$`Month-Year`, "%m-%Y")
+  test$`Month-Year` <- as.Date(as.yearmon(test$`Month-Year`, "%m-%Y"))
+  test <- test %>%
+    rename(Date = `Month-Year`)
+  # save over the Original File
+  YF_PondAirTemp_max <- test
+  # Sort the dataframe by Date
+  YF_PondAirTemp_max <- YF_PondAirTemp_max[order(YF_PondAirTemp_max$Date), ]
+  # Reset row names
+  rownames(YF_PondAirTemp_max) <- NULL
+  # check the final file
+  head(YF_PondAirTemp_max)
+
+# 3. min values
+str(YF_PondAirTemp_min)
+  test <- YF_PondAirTemp_min
+  # pulling out the dates here
+  test$`Month-Year` <- as.yearmon(test$`Month-Year`, "%m-%Y")
+  test$`Month-Year` <- as.Date(as.yearmon(test$`Month-Year`, "%m-%Y"))
+  test <- test %>%
+    rename(Date = `Month-Year`)
+  # save over the Original File
+  YF_PondAirTemp_min <- test
+  # Sort the dataframe by Date
+  YF_PondAirTemp_min <- YF_PondAirTemp_min[order(YF_PondAirTemp_min$Date), ]
+  # Reset row names
+  rownames(YF_PondAirTemp_min) <- NULL
+  # check the final file
+  head(YF_PondAirTemp_min)
+  
+```
+
 ## Section 2 - Copper River Delta
 
 ### Set up the file name and check the structure
@@ -651,6 +712,62 @@ CR_PondAirTemp_min <- CR_AirPondData %>%
     names_from = Pond,
     values_from = c(Water_MonthMin)
   )
+```
+
+### Correct the Data formats and order these by date here
+
+```{r}
+# 1. mean values
+str(CR_PondAirTemp_mean)
+  test <- CR_PondAirTemp_mean
+  # pulling out the dates here
+  test$`Month-Year` <- as.yearmon(test$`Month-Year`, "%m-%Y")
+  test$`Month-Year` <- as.Date(as.yearmon(test$`Month-Year`, "%m-%Y"))
+  test <- test %>%
+    rename(Date = `Month-Year`)
+  # save over the Original File
+  CR_PondAirTemp_mean <- test
+  # Sort the dataframe by Date
+  CR_PondAirTemp_mean <- CR_PondAirTemp_mean[order(CR_PondAirTemp_mean$Date), ]
+  # Reset row names
+  rownames(CR_PondAirTemp_mean) <- NULL
+  # check the final file
+  head(CR_PondAirTemp_mean)
+  
+# 2. max values
+str(CR_PondAirTemp_max)
+  test <- CR_PondAirTemp_max
+  # pulling out the dates here
+  test$`Month-Year` <- as.yearmon(test$`Month-Year`, "%m-%Y")
+  test$`Month-Year` <- as.Date(as.yearmon(test$`Month-Year`, "%m-%Y"))
+  test <- test %>%
+    rename(Date = `Month-Year`)
+  # save over the Original File
+  CR_PondAirTemp_max <- test
+  # Sort the dataframe by Date
+  CR_PondAirTemp_max <- CR_PondAirTemp_max[order(CR_PondAirTemp_max$Date), ]
+  # Reset row names
+  rownames(CR_PondAirTemp_max) <- NULL
+  # check the final file
+  head(CR_PondAirTemp_max)
+
+# 3. min values
+str(CR_PondAirTemp_min)
+  test <- CR_PondAirTemp_min
+  # pulling out the dates here
+  test$`Month-Year` <- as.yearmon(test$`Month-Year`, "%m-%Y")
+  test$`Month-Year` <- as.Date(as.yearmon(test$`Month-Year`, "%m-%Y"))
+  test <- test %>%
+    rename(Date = `Month-Year`)
+  # save over the Original File
+  CR_PondAirTemp_min <- test
+  # Sort the dataframe by Date
+  CR_PondAirTemp_min <- CR_PondAirTemp_min[order(CR_PondAirTemp_min$Date), ]
+  # Reset row names
+  rownames(CR_PondAirTemp_min) <- NULL
+  # check the final file
+  head(CR_PondAirTemp_min)
+  
 ```
 
 # Part 6 - Save the data files as .csv files to be loaded into other code here
