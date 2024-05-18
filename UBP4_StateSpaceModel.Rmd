@@ -30,7 +30,7 @@ library(ggplot2)
 ## Start by loading in the Yakutat Forelands mean data set
 
 ```{r}
-YF_Temps <- read.csv("YF_PondAirTemp_mean.csv", header=TRUE)
+YF_Temps <- read.csv("DataFiles/YF_PondAirTemp_mean.csv", header=TRUE)
 
 library(dplyr)
 # remove the first column here and change the column for Date to date
@@ -56,12 +56,10 @@ YF_WaterTemp <- YF_Temps %>%
 ```{r}
 head(YF_Temps)
 
-library(ggplot2)
-
-# plotting this --> shows up as 'blank'
-ggplot(YF_Temps)+
-  geom_line(data = YF_Temps, aes(x = date, y = Air_MonthAvg, color = 'red', linetype = "solid"))+
-  geom_line(data = YF_Temps, aes(x = date, y = UBP4, color = 'blue', linetype = "dashed"))
+# # plotting this --> shows up as 'blank'
+# ggplot(YF_Temps)+
+#   geom_line(data = YF_Temps, aes(x = date, y = Air_MonthAvg, color = 'red', linetype = "solid"))+
+#   geom_line(data = YF_Temps, aes(x = date, y = UBP4, color = 'blue', linetype = "dashed"))
 
 # Load necessary libraries
 library(ggplot2)
@@ -70,7 +68,7 @@ library(tidyr)
 
 # Reshape the data from wide to long format
 YF_Temps_long <- YF_Temps %>%
-  pivot_longer(cols = c(MP1, MP3, PL3, PL2, UBP3, MP5, MP8, UBP1, UBP2, PL1, UBP4),
+  pivot_longer(cols = c(Air_MonthAvg, MP1, MP3, PL3, PL2, UBP3, MP5, MP8, UBP1, UBP2, PL1, UBP4),
                names_to = "variable",
                values_to = "value")
 
@@ -78,16 +76,22 @@ YF_Temps_long <- YF_Temps %>%
 str(YF_Temps_long)
 
 # Create the plot
-ggplot(YF_Temps_long, aes(x = as.Date(date), y = value, color = variable)) +
-  geom_line() +
-  labs(title = "Pond Water Temperature Over Time",
+# Create the plot
+YF_PondTemp <- ggplot(YF_Temps_long, aes(x = as.Date(date), y = value, color = variable)) +
+  geom_line(data = filter(YF_Temps_long, variable == "Air_MonthAvg"), color = "black") +  
+  geom_line(data = filter(YF_Temps_long, variable != "Air_MonthAvg")) +  
+  labs(title = "YF Pond Water Temperature Over Time",
        x = "Date",
        y = "Value",
        color = "Variable") +
   theme_minimal()
+YF_PondTemp
+
+
+# Save the plot
+ggsave("Plots/YF_PondTemp.png", plot = YF_PondTemp, width = 8, height = 6)
 
 ```
-
 
 # Starting the Analysis
 
@@ -104,12 +108,16 @@ YF_WaterTemp
 rownames(YF_WaterTemp) <- NULL
 
 # pulling out the dates here
-time <- YF_WaterTemp$Date
+time <- YF_WaterTemp$date
+length(time)
 
 # Choose one pond to plot through time -- MP1
-y = YF_WaterTemp %>%
-  select(UBP4)
-y
+y <- YF_WaterTemp$UBP4
+length(y)
+
+# Pull out the air temperature from the data
+temp <- YF_AirTemp$Air_MonthAvg
+length(temp)
 ```
 
 The code itself has three components, the data model, the process model, and the priors.
@@ -120,32 +128,10 @@ Process Model - relates the state of the system at one point in time to the stat
 
 Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
 
-### Setting up the random walk --> added in the air temperature here
- This option adds it so the beta0 and m are separate named variables
-```{r}
-# RandomWalk = "
-# model{
-#   
-#   #### Data Model
-#   for(t in 1:n){
-#     y[t] ~ dnorm(x[t],tau_obs)
-#   }
-#   
-#   #### Process Model
-#   for(t in 2:n){
-#     x[t]~dnorm(k[t-1],tau_add)
-#     k[t-1] <- beta0 + m * temp[t-1]
-#   }
-#   
-#   #### Priors
-#   x[1] ~ dnorm(x_ic,tau_ic)
-#   tau_obs ~ dgamma(a_obs,r_obs)
-#   tau_add ~ dgamma(a_add,r_add)
-# }
-# "
-```
+### Setting up the random walk --\> added in the air temperature here
 
-This option sets it up with the matrix of betas
+Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
+
 ```{r}
 RandomWalk_Temp = "
 model{
@@ -170,9 +156,10 @@ model{
 "
 ```
 
-### Next we need to define the data and priors as a list. 
+### Next we need to define the data and priors as a list.
+
 ```{r}
-data <- list(y=y$UBP4,n=length(y),     ## data
+data <- list(y=y,n=length(y),     ## data
              x_ic=0,tau_ic=0.2,
              betap=c(1,1), sigmap=diag(0.0001, 2, 2),
              temp = temp, ## initial condition prior
@@ -189,7 +176,7 @@ AW - take for each pond and have what was originally here with a sample from eac
 nchain = 3
 init <- list()
 for(i in 1:nchain){
-  vect <- c(y$UBP4)
+  vect <- c(y)
   y.samp = sample(vect,length(vect),replace=TRUE)
   init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
                     tau_obs=5/var(y.samp))        ## initial guess on obs precision
@@ -228,19 +215,19 @@ jags.out   <- coda.samples (model = j.model,
 ### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
 
 ```{r}
-# # THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
-# time.rng = c(1,length(time))       ## adjust to zoom in and out
-# out <- as.matrix(jags.out)         ## convert from coda to matrix  
-# x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
-# ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975)) ## Remove log scale
-# 
-# plot(time,ci[2,],type='n',ylim=range(y,na.rm=TRUE),ylab="Flu Index",log='y',xlim=time[time.rng])
-# ## adjust x-axis label to be monthly if zoomed
-# if(diff(time.rng) < 100){ 
-#   axis.Date(1, at=seq(time[time.rng[1]],time[time.rng[2]],by='month'), format = "%Y-%m")
-# }
-# ecoforecastR::ciEnvelope(time,ci[1,],ci[3,],col=ecoforecastR::col.alpha("lightBlue",0.75))
-# points(time,y,pch="+",cex=0.5)
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+time.rng = c(1,length(time))       ## adjust to zoom in and out
+out <- as.matrix(jags.out)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+plot(time,ci[2,],type='n',ylim=range(y,na.rm=TRUE),ylab="Flu Index",log='y',xlim=time[time.rng])
+## adjust x-axis label to be monthly if zoomed
+if(diff(time.rng) < 100){
+  axis.Date(1, at=seq(time[time.rng[1]],time[time.rng[2]],by='month'), format = "%Y-%m")
+}
+ecoforecastR::ciEnvelope(time,ci[1,],ci[3,],col=ecoforecastR::col.alpha("lightBlue",0.75))
+points(time,y,pch="+",cex=0.5)
 ```
 
 ### Plotting a reconstruction of the fitted line to the air temp-water temp data
@@ -258,8 +245,8 @@ predicted_lake_temp <- numeric(N_sim)
 
 # Loop through each row of the output matrix
 for(i in 1:N_sim) {
-  beta <- out[i, "beta0[1]"] # extract the value of beta for a given iteration from the output matrix
-  delta <- out[i, "beta0[2]"] # extract the value of delta for a given iteration from the output matrix
+  beta <- out[i, "beta0[1]"] # extract the value of beta (intercept) for a given iteration from the output matrix
+  delta <- out[i, "beta0[2]"] # extract the value of delta (slope) for a given iteration from the output matrix
   x[i] <- out[i, "tau_add"] # extract the estimated latent variable at the previous time step
   predicted_lake_temp[i] <- beta * x[i] + delta * temp
 }
@@ -312,12 +299,14 @@ cor(out[,1:2])
 ```
 
 
-
-
-# Part 2 - Model with only the water temperature in it -- changing the random walk here (skip to line 442 to get to a difference)
 While working on making the graph above (that really is not correct), I realized that the water temperature is 0 if air temperature is equal to or less than 0. So needed to update this in the model of water temperature with air temperature include
 
-## Set up the working space for the analysis
+# Part 2 - Model with only the air temperature in it -- added a level of complexity to the JAGS model
+setup of the model
+  - include beta as a matrix for the slope and intercept
+  - include the break point in the relationship between the water and air temepratures (air temp greater than zero is linear but less than 0 is just 0 water temperature)
+
+### Set up the working space for the analysis
 
 ### Load in packages
 
@@ -376,7 +365,6 @@ ggplot(YF_Temps)+
 
 ```
 
-
 ### Pull in the data we want to analyze
 
 Here this is set up as just one pond and temperature data
@@ -413,8 +401,10 @@ Process Model - relates the state of the system at one point in time to the stat
 
 Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
 
-### Setting up the random walk --> added in the air temperature here
- This option adds it so the beta0 and m are separate named variables
+### Setting up the random walk --\> added in the air temperature here
+
+This option adds it so the beta0 and m are separate named variables
+
 ```{r}
 # RandomWalk = "
 # model{
@@ -439,6 +429,7 @@ Priors - Finally, for the priors we need to define **priors** for the initial co
 ```
 
 This option sets it up with the matrix of betas
+
 ```{r}
 RandomWalk_Temp = "
 model{
@@ -463,7 +454,8 @@ for(t in 2:n){
 "
 ```
 
-### Next we need to define the data and priors as a list. 
+### Next we need to define the data and priors as a list.
+
 ```{r}
 data <- list(y=y$UBP4,n=length(y),     ## data
              x_ic=0,tau_ic=0.2,
