@@ -1,0 +1,18 @@
+---
+title: "IndividualPondModels_YF"
+author: "Amaryllis Adey"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Goal of this code is to fit a model to the observational data for each of the ponds in the Yakutat Forelands
+
+# Modeling the Observational Data for the Yakutat Forelands Ponds
+
+Looping through each pond individually because the for loop to do this was more complicated than I could figure out in the time before SFS
+
+

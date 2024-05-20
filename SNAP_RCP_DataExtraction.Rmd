@@ -1,0 +1,16 @@
+---
+title: "SNAP_RCP_DataExtraction"
+author: "Amaryllis Adey"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Attempting to extract the RCP data from the geotiff files
+Advice online recommends opening the geotiff data files in R and then exporting them as other formats from R, we are going to attempt this
+
+## Starting with the RCP 4.5 geotiff file
+
