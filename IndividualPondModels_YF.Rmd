@@ -2014,7 +2014,7 @@ UBP4ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = UBP4)) +
-  ggtitle("UBP4- Yakutat Forelands")+
+  ggtitle("UBP4 - Yakutat Forelands")+
   ylab("Temeprature (C)") +
   xlab("Date") +
   theme_minimal() +
