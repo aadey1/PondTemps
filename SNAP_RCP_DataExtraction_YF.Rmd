@@ -9,6 +9,11 @@ output: word_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+Setting up the workspace
+```{r}
+library(dplyr)
+```
+
 # Attempting to extract the RCP data from the .csv file
 
 Read in the original file (with the header removed)
@@ -16,6 +21,37 @@ Read in the original file (with the header removed)
 ## Starting with pulling out the RCP 4.5 data
 
 ```{r}
+CR_snapTemp <- read.csv("DataFiles/CordovaMonthlyTemperatures.csv", header = TRUE)
 
+# Pull out only the RCP 4.5 data
+CR_4.5 <- CR_snapTemp %>%
+  filter(scenario == "rcp45")
+
+# Check the model options here
+unique(CR_4.5$model) # "5ModelAvg"  "GFDL-CM3"   "NCAR-CCSM4"
+
+# using the 5ModelAvg for now 
+CR_4.5 <- CR_snapTemp %>%
+  filter(scenario == "rcp45" & model == "5ModelAvg")
+
+# reorder by month-date
+test <- CR_4.5 %>%
+  mutate(month = recode(month,
+                        January = 01,
+                        February = 02,
+                        March = 03,
+                        April = 04,
+                        May = 05,
+                        June = 06,
+                        July = 07,
+                        August = 08,
+                        September = 09,
+                        October = 10,
+                        November = 11,
+                        December = 12))
+test <- test %>%
+  mutate(as.Date(month))
+test <- CR_4.5 %>%
+  arrange(year, month)
 ```
 
