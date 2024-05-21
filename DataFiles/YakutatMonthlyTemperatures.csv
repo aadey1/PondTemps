@@ -1,9 +1,3 @@
-# Location: 59.5089 -139.6599,,,,,,
-# View a report for this location at https://earthmaps.io/tas2km/point/59.5089/-139.6599,,,,,,
-# tas is the mean annual near-surface air temperature in degrees Celsius for the specified model and scenario,,,,,,
-# tasmin is the minimum temperature in degrees C,,,,,,
-# tasmean is the mean temperature in degrees C,,,,,,
-# tasmax is the maximum temperature in degrees C,,,,,,
 model,scenario,month,year,tasmin,tasmean,tasmax
 CRU-TS,historical,January,1901,-8.3,-4.6,-1
 CRU-TS,historical,January,1902,-6.3,-2.5,1.3
