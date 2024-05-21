@@ -543,7 +543,7 @@ df1d$Region<-"YF" #restore region column in prep for merge with Copper River dat
 CR_subset_met3 <- subset(met3, NAME == "CORDOVA AIRPORT")
 
 # Perform the left join with subset_met3 as the left data frame
-df2d <- merge(CR_subset_met3, df1c, by = "monyr", all.x = TRUE)
+df2d <- merge(CR_subset_met3, df2c, by = "monyr", all.x = TRUE)
 df2d$Region<-"CR" #restore region column in prep for merge with Copper River data.
 
 ```
