@@ -13,4 +13,9 @@ knitr::opts_chunk$set(echo = TRUE)
 Advice online recommends opening the geotiff data files in R and then exporting them as other formats from R, we are going to attempt this
 
 ## Starting with the RCP 4.5 geotiff file
+```{r}
+library(raster)
+library(gdalUtilities)
+gdalinfo("tas_mean_C_ar5_5ModelAvg_rcp45_01_2006.tif")
+```
 
