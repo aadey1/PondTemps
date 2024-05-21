@@ -1,0 +1,21 @@
+---
+title: "SNAP_RCP_DataExtraction_YF"
+author: "Amaryllis Adey"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Attempting to extract the RCP data from the .csv file
+
+Read in the original file (with the header removed)
+
+## Starting with pulling out the RCP 4.5 data
+
+```{r}
+
+```
+

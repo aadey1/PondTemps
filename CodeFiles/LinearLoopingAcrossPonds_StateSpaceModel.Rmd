@@ -1,0 +1,936 @@
+---
+title: "UBP4_StateSpaceModel"
+author: "Amaryllis Adey"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Part 4 Looping across one pond-- checking that this code works
+
+Exploring the state-space model framework using code based on 'Activity 6 - State-space models' that Alyssa shared along
+
+# Set up the working space for the analysis
+
+## Load in packages
+
+```{r}
+library(rjags)
+library(daymetr)
+library(ecoforecastR)
+library(dplyr)
+library(lubridate)
+library(zoo)
+library(ggplot2)
+```
+
+## Start by loading in the Yakutat Forelands mean data set
+
+```{r}
+YF_Temps <- read.csv("DataFiles/YF_PondAirTemp_mean.csv", header=TRUE)
+
+library(dplyr)
+# remove the first column here and change the column for Date to date
+  # Date is a function of some sort so could be the source of errors
+YF_Temps <- YF_Temps %>%
+  rename(date=Date)
+YF_Temps <- YF_Temps[,-1]
+head(YF_Temps)
+```
+
+## Separate the data into the air temp and the water temp data
+
+```{r}
+YF_AirTemp <- YF_Temps %>%
+  select(date, Airport, Air_MonthAvg, Region)
+
+YF_WaterTemp <- YF_Temps %>%
+  select(date, MP1, MP3, PL3, PL2, UBP3, MP5, MP8, UBP1, UBP2, PL1, UBP4)
+```
+
+## Going to attempt to plot the water temperature and the air temperature over time
+
+```{r}
+head(YF_Temps)
+
+# # plotting this --> shows up as 'blank'
+# ggplot(YF_Temps)+
+#   geom_line(data = YF_Temps, aes(x = date, y = Air_MonthAvg, color = 'red', linetype = "solid"))+
+#   geom_line(data = YF_Temps, aes(x = date, y = UBP4, color = 'blue', linetype = "dashed"))
+
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# Reshape the data from wide to long format
+YF_Temps_long <- YF_Temps %>%
+  pivot_longer(cols = c(Air_MonthAvg, MP1, MP3, PL3, PL2, UBP3, MP5, MP8, UBP1, UBP2, PL1, UBP4),
+               names_to = "variable",
+               values_to = "value")
+
+# Check the structure of the reshaped data
+str(YF_Temps_long)
+
+# Create the plot
+# Create the plot
+YF_PondTemp <- ggplot(YF_Temps_long, aes(x = as.Date(date), y = value, color = variable)) +
+  geom_line(data = filter(YF_Temps_long, variable == "Air_MonthAvg"), color = "black") +  
+  geom_line(data = filter(YF_Temps_long, variable != "Air_MonthAvg")) +  
+  labs(title = "YF Pond Water Temperature Over Time",
+       x = "Date",
+       y = "Value",
+       color = "Variable") +
+  theme_minimal()
+YF_PondTemp
+
+
+# Save the plot
+ggsave("Plots/YF_PondTemp.png", plot = YF_PondTemp, width = 8, height = 6)
+
+```
+
+# Starting the Analysis
+
+## Part 1 - Model with the air temperature added into it
+-Linear air-water temperature relationship with only one pond here
+
+### Pull in the data we want to analyze
+
+Here this is set up as just one pond and temperature data
+
+```{r}
+YF_WaterTemp
+
+# Reset row names
+rownames(YF_WaterTemp) <- NULL
+
+# pulling out the dates here
+time <- YF_WaterTemp$date
+length(time)
+
+# Choose one pond to plot through time -- MP1
+y <- YF_WaterTemp$UBP4
+length(y)
+
+# Pull out the air temperature from the data
+temp <- YF_AirTemp$Air_MonthAvg
+length(temp)
+```
+
+The code itself has three components, the data model, the process model, and the priors.
+
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+
+### Setting up the random walk --\> added in the air temperature here
+
+Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
+
+```{r}
+RandomWalk_Temp = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+  for(t in 2:n){
+    x[t]~dnorm(k[t],tau_add)
+    k[t] <- beta0[1] + beta0[2] * temp[t]
+  }
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  beta0 ~ dmnorm(betap, sigmap)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
+### Next we need to define the data and priors as a list.
+
+```{r}
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk_Temp),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs", "beta0[1]", "beta0[2]"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(jags.out)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  GraphDataOutputCheck <- merge(ModelOutput, YF_WaterTemp, by = "date", all = T)
+
+# Now you can use this data frame with ggplot2
+UBP4ModelPlot <- ggplot(GraphDataOutputCheck) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = UBP4)) +
+  ggtitle("UBP4 - Yakutat Forelands")+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP4ModelPlot
+
+ggsave("Plots/UBP4ModelPlot.jpeg", plot = UBP4ModelPlot, width = 8, height = 6)
+
+
+
+
+
+# ### below here is the code from the exercise. Need to also check the code that alyssa sent along!!
+# 
+# plot(time,ci[2,],type='n',ylim=range(y),ylab="Water Temperature (C)",xlim=time[time.rng])
+# 
+# ## adjust x-axis label to be monthly if zoomed
+# if(diff(time.rng) < 100){
+#   axis.Date(1, at=seq(time[time.rng[1]],time[time.rng[2]],by='month'), format = "%Y-%m")
+# }
+# ecoforecastR::ciEnvelope(time,ci[1,],ci[3,],col=ecoforecastR::col.alpha("lightBlue",0.75))
+# points(time,y,pch="+",cex=0.5)
+```
+
+### Plotting a reconstruction of the fitted line to the air temp-water temp data
+
+Do this by looping through each iteraction of the MCMC output, each of which has a value for each parameter in your process equation, and making the fitted points by hand.
+
+```{r}
+# TThis is based on code from AW, AA couldnt get it to work on 5/18 --> might be better once I have more iterations across all ponds to manage for the output here
+# out <- as.matrix(jags.out)       ## convert from coda to matrix  
+# N_sim = 10000
+# 
+# # Initialize vectors to store results
+# x <- numeric(N_sim)
+# predicted_lake_temp <- numeric(N_sim)
+# 
+# # Loop through each row of the output matrix
+# for(i in 1:N_sim) {
+#   beta <- out[i, "beta0[1]"] # extract the value of beta (intercept) for a given iteration from the output matrix
+#   delta <- out[i, "beta0[2]"] # extract the value of delta (slope) for a given iteration from the output matrix
+#   x[i] <- out[i, "tau_add"] # extract the estimated latent variable at the previous time step
+#   predicted_lake_temp[i] <- beta * x[i] + delta * temp
+# }
+# 
+# str(predicted_lake_temp) # this now had a vector for each iteration and then will need to summarize this to make it work for plotting
+# 
+# library(dplyr)
+# library(purrr)
+# # Extract the first element from each vector in predicted_lake_temp and calculate the average
+# average_values <- numeric(73)
+# 
+# # Loop through each position (1 to 73)
+# for (i in 1:73) {
+#   # Extract values at position i from all vectors in predicted_lake_temp
+#   values <- sapply(predicted_lake_temp, `[`, i)
+#   # Calculate the average for position i
+#   average_values[i] <- mean(values, na.rm = TRUE)
+# }
+# 
+# # Plot the average values
+# predictedWaterTemp <- plot(average_values, type = "l", col = "blue",
+#      main = "Average Predicted Lake Temperature",
+#      xlab = "Time Step", ylab = "Average Temperature")
+# 
+# # Plot each element of predicted_lake_temp -- makes 10000 plots as is
+# #for (i in 1:length(predicted_lake_temp)) {
+# #  plot(predicted_lake_temp[[i]], type = "l", col = "blue", ylim = c(-1000, 1000),
+# #       main = "Predicted Lake Temperature", xlab = "Time Step", ylab = "Temperature")
+# #}
+# 
+# # Add a legend
+# #legend("topright", legend = 1:length(predicted_lake_temp), col = "blue", lty = 1, title = "Iteration")
+
+```
+
+###Next, lets look at the posterior distributions for `tau_add` and `tau_obs`, which we'll convert from precisions back into **standard deviations**.
+
+```{r}
+hist(1/sqrt(out[,1]),main=colnames(out)[1])
+hist(1/sqrt(out[,2]),main=colnames(out)[2])
+hist(1/sqrt(out[,3]),main=colnames(out)[3])
+hist(1/sqrt(out[,4]),main=colnames(out)[4])
+```
+
+### We'll also want to look at the joint distribution of the two parameters to check whether the two parameters strongly covary.
+
+```{r, fig.asp = 1.0}
+plot(out[,1],out[,2],pch=".",xlab=colnames(out)[1],ylab=colnames(out)[2])
+cor(out[,1:2])
+```
+
+
+While working on making the graph above (that really is not correct), I realized that the water temperature is 0 if air temperature is equal to or less than 0. So needed to update this in the model of water temperature with air temperature include
+
+
+## Part 2 - Model with the air temperature added to it
+-include all ponds now but still a linear relationship between air and water temepratures.
+
+### Pull in the data we want to analyze
+
+Here this is set up as just one pond and temperature data
+
+### Separate the data into the air temp and the water temp data
+
+```{r}
+YF_AirTemp <- YF_Temps %>%
+  select(date, Airport, Air_MonthAvg, Region)
+
+YF_WaterTemp <- YF_Temps %>%
+  select(date, MP1, MP3, PL3, PL2, UBP3, MP5, MP8, UBP1, UBP2, PL1, UBP4)
+```
+
+
+```{r}
+YF_WaterTemp
+
+# Reset row names
+rownames(YF_WaterTemp) <- NULL
+
+# pulling out the dates here
+time <- YF_WaterTemp$date
+length(time)
+
+# Choose one pond to plot through time -- MP1
+y <- YF_WaterTemp %>%
+  select(MP1, MP3, PL3, PL2, UBP3, MP5, MP8, UBP1, UBP2, PL1, UBP4)
+dim(y)
+
+# Pull out the air temperature from the data
+temp <- YF_AirTemp$Air_MonthAvg
+length(temp)
+```
+
+The code itself has three components, the data model, the process model, and the priors.
+
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+
+### Setting up the random walk --\> added in the air temperature here
+
+Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
+
+```{r}
+RandomWalk_Ponds = "
+model{
+  #### Data Model
+  for(p in 1:n_cols){
+    for(t in 1:n_rows){
+      y[t,p] ~ dnorm(x[t,p], tau_obs)
+    }
+  }
+  #### Process Model
+  for(p in 1:n_cols){
+    for(t in 2:n_rows){
+      x[t,p] ~ dnorm(k[t,p], tau_add)
+      k[t,p] <- beta0[1] + beta0[2] * temp[t]
+    }
+  }
+  #### Priors
+  for(p in 1:n_cols){
+    x[1,p] ~ dnorm(x_ic[p], tau_ic)
+  }
+  beta0 ~ dmnorm(betap, sigmap)
+  tau_obs ~ dgamma(a_obs, r_obs)
+  tau_add ~ dgamma(a_add, r_add)
+}
+"
+```
+
+### Next we need to define the data and priors as a list.
+
+```{r}
+# Set initial conditions explicitly in the init list
+x_ic <- rep(0, ncol(y))
+data <- list(y=as.matrix(y), n_cols = ncol(y), n_rows=nrow(y),     ## data
+             tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
+             a_obs=1, r_obs=1,           ## obs error prior
+             a_add=1, r_add=1,            ## process error prior
+             x_ic = x_ic
+)
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y$MP1, y$MP3, y$PL3, y$PL3, y$PL2, y$UBP3, y$MP5, y$MP8, y$UBP1)
+  y.samp = sample(vect, length(vect), replace=TRUE)
+  init[[i]] <- list(x = matrix(rep(0, nrow(y) * ncol(y)), nrow = nrow(y), ncol = ncol(y)),
+                    tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model2   <- jags.model (file = textConnection(RandomWalk_Ponds),
+                         data = data,
+                         n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out2   <- coda.samples (model = j.model2,
+                            variable.names = c("tau_add","tau_obs", "beta0[1]", "beta0[2]"),
+                                n.iter = 1000)
+plot(jags.out2)
+```
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out2   <- coda.samples (model = j.model2,
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+
+# need to put out the x values, so I think I can use the out code to split the mcmc output?
+
+
+
+
+
+
+
+
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(jags.out)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  GraphDataOutputCheck <- merge(ModelOutput, YF_WaterTemp, by = "date", all = T)
+
+# Now you can use this data frame with ggplot2
+UBP4ModelPlot <- ggplot(GraphDataOutputCheck) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = UBP4)) +
+  ggtitle("UBP4 - Yakutat Forelands")+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP4ModelPlot
+
+ggsave("Plots/UBP4ModelPlot.jpeg", plot = UBP4ModelPlot, width = 8, height = 6)
+
+
+
+
+
+### below here is the code from the exercise. Need to also check the code that alyssa sent along!!
+
+plot(time,ci[2,],type='n',ylim=range(y),ylab="Water Temperature (C)",xlim=time[time.rng])
+
+## adjust x-axis label to be monthly if zoomed
+if(diff(time.rng) < 100){
+  axis.Date(1, at=seq(time[time.rng[1]],time[time.rng[2]],by='month'), format = "%Y-%m")
+}
+ecoforecastR::ciEnvelope(time,ci[1,],ci[3,],col=ecoforecastR::col.alpha("lightBlue",0.75))
+points(time,y,pch="+",cex=0.5)
+```
+
+### Plotting a reconstruction of the fitted line to the air temp-water temp data
+
+Do this by looping through each iteraction of the MCMC output, each of which has a value for each parameter in your process equation, and making the fitted points by hand.
+
+```{r}
+# TThis is based on code from AW, AA couldnt get it to work on 5/18 --> might be better once I have more iterations across all ponds to manage for the output here
+# out <- as.matrix(jags.out)       ## convert from coda to matrix  
+# N_sim = 10000
+# 
+# # Initialize vectors to store results
+# x <- numeric(N_sim)
+# predicted_lake_temp <- numeric(N_sim)
+# 
+# # Loop through each row of the output matrix
+# for(i in 1:N_sim) {
+#   beta <- out[i, "beta0[1]"] # extract the value of beta (intercept) for a given iteration from the output matrix
+#   delta <- out[i, "beta0[2]"] # extract the value of delta (slope) for a given iteration from the output matrix
+#   x[i] <- out[i, "tau_add"] # extract the estimated latent variable at the previous time step
+#   predicted_lake_temp[i] <- beta * x[i] + delta * temp
+# }
+# 
+# str(predicted_lake_temp) # this now had a vector for each iteration and then will need to summarize this to make it work for plotting
+# 
+# library(dplyr)
+# library(purrr)
+# # Extract the first element from each vector in predicted_lake_temp and calculate the average
+# average_values <- numeric(73)
+# 
+# # Loop through each position (1 to 73)
+# for (i in 1:73) {
+#   # Extract values at position i from all vectors in predicted_lake_temp
+#   values <- sapply(predicted_lake_temp, `[`, i)
+#   # Calculate the average for position i
+#   average_values[i] <- mean(values, na.rm = TRUE)
+# }
+# 
+# # Plot the average values
+# predictedWaterTemp <- plot(average_values, type = "l", col = "blue",
+#      main = "Average Predicted Lake Temperature",
+#      xlab = "Time Step", ylab = "Average Temperature")
+# 
+# # Plot each element of predicted_lake_temp -- makes 10000 plots as is
+# #for (i in 1:length(predicted_lake_temp)) {
+# #  plot(predicted_lake_temp[[i]], type = "l", col = "blue", ylim = c(-1000, 1000),
+# #       main = "Predicted Lake Temperature", xlab = "Time Step", ylab = "Temperature")
+# #}
+# 
+# # Add a legend
+# #legend("topright", legend = 1:length(predicted_lake_temp), col = "blue", lty = 1, title = "Iteration")
+
+```
+
+###Next, lets look at the posterior distributions for `tau_add` and `tau_obs`, which we'll convert from precisions back into **standard deviations**.
+
+```{r}
+hist(1/sqrt(out[,1]),main=colnames(out)[1])
+hist(1/sqrt(out[,2]),main=colnames(out)[2])
+hist(1/sqrt(out[,3]),main=colnames(out)[3])
+hist(1/sqrt(out[,4]),main=colnames(out)[4])
+```
+
+### We'll also want to look at the joint distribution of the two parameters to check whether the two parameters strongly covary.
+
+```{r, fig.asp = 1.0}
+plot(out[,1],out[,2],pch=".",xlab=colnames(out)[1],ylab=colnames(out)[2])
+cor(out[,1:2])
+```
+
+
+While working on making the graph above (that really is not correct), I realized that the water temperature is 0 if air temperature is equal to or less than 0. So needed to update this in the model of water temperature with air temperature include
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Part 3 - Model with only the air temperature in it -- added a level of complexity to the JAGS model
+setup of the model
+  - include beta as a matrix for the slope and intercept
+  - include the break point in the relationship between the water and air temepratures (air temp greater than zero is linear but less than 0 is just 0 water temperature)
+
+### Set up the working space for the analysis
+
+### Load in packages
+
+```{r}
+library(rjags)
+library(daymetr)
+library(ecoforecastR)
+library(dplyr)
+library(lubridate)
+library(zoo)
+library(ggplot2)
+```
+
+### Start by loading in the Yakutat Forelands mean data set
+
+```{r}
+YF_Temps <- read.csv("YF_PondAirTemp_mean.csv", header=TRUE)
+
+YF_Temps <- YF_Temps %>%
+  rename(`Month-Year` = Month.Year) %>%
+  select(-c(1))
+```
+
+### Separate the data into the air temp and the water temp data
+
+```{r}
+YF_AirTemp <- YF_Temps %>%
+  select(`Month-Year`, Airport, Air_MonthAvg, Region)
+
+YF_WaterTemp <- YF_Temps %>%
+  select(`Month-Year`, MP1, MP3, PL3, PL2, UBP3, MP5, MP8, UBP1, UBP2, PL1, UBP4)
+```
+
+### Going to attempt to plot the water temperature and the air temperature over time
+
+```{r}
+str(YF_Temps)
+
+# Fix the date
+test <- YF_Temps
+# pulling out the dates here
+test$`Month-Year` <- as.yearmon(test$`Month-Year`, "%m-%Y")
+test$`Month-Year` <- as.Date(as.yearmon(test$`Month-Year`, "%m-%Y"))
+
+test <- test %>%
+  rename(Date = `Month-Year`)
+
+YF_Temps <- test
+
+ggplot(YF_Temps)+
+  geom_line(aes(x = Date, y = Air_MonthAvg, color = 'red', linetype = "solid"))+
+  geom_line(aes(x = Date, y = UBP4, color = 'blue', linetype = "dashed")) +
+  theme_bw()
+  
+
+
+```
+
+### Pull in the data we want to analyze
+
+Here this is set up as just one pond and temperature data
+
+```{r}
+YF_WaterTemp
+
+
+
+test <- YF_WaterTemp
+# pulling out the dates here
+test$`Month-Year` <- as.yearmon(test$`Month-Year`, "%m-%Y")
+test$`Month-Year` <- as.Date(as.yearmon(test$`Month-Year`, "%m-%Y"))
+
+test <- test %>%
+  rename(Date = `Month-Year`)
+
+YF_WaterTemp <- test
+
+# pulling out the dates here
+time <- YF_WaterTemp$Date
+
+# Choose one pond to plot through time -- MP1
+y = YF_WaterTemp %>%
+  select(UBP4)
+y
+```
+
+The code itself has three components, the data model, the process model, and the priors.
+
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+
+### Setting up the random walk --\> added in the air temperature here
+
+This option adds it so the beta0 and m are separate named variables
+
+```{r}
+# RandomWalk = "
+# model{
+#   
+#   #### Data Model
+#   for(t in 1:n){
+#     y[t] ~ dnorm(x[t],tau_obs)
+#   }
+#   
+#   #### Process Model
+#   for(t in 2:n){
+#     x[t]~dnorm(k[t-1],tau_add)
+#     k[t-1] <- beta0 + m * temp[t-1]
+#   }
+#   
+#   #### Priors
+#   x[1] ~ dnorm(x_ic,tau_ic)
+#   tau_obs ~ dgamma(a_obs,r_obs)
+#   tau_add ~ dgamma(a_add,r_add)
+# }
+# "
+```
+
+This option sets it up with the matrix of betas
+
+```{r}
+RandomWalk_Temp = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+for(t in 2:n){
+  x[t] ~ dnorm(k[t], tau_add)
+  k[t] <- ifelse(temp[t] > 0, beta0[1] + beta0[2] * temp[t], 0)
+}
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  beta0 ~ dmnorm(betap, sigmap)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
+### Next we need to define the data and priors as a list.
+
+```{r}
+data <- list(y=y$UBP4,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y$UBP4)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk_Temp),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs", "beta0[1]", "beta0[2]"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+# # THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+# time.rng = c(1,length(time))       ## adjust to zoom in and out
+# out <- as.matrix(jags.out)         ## convert from coda to matrix  
+# x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+# ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975)) ## Remove log scale
+# 
+# plot(time,ci[2,],type='n',ylim=range(y,na.rm=TRUE),ylab="Flu Index",log='y',xlim=time[time.rng])
+# ## adjust x-axis label to be monthly if zoomed
+# if(diff(time.rng) < 100){ 
+#   axis.Date(1, at=seq(time[time.rng[1]],time[time.rng[2]],by='month'), format = "%Y-%m")
+# }
+# ecoforecastR::ciEnvelope(time,ci[1,],ci[3,],col=ecoforecastR::col.alpha("lightBlue",0.75))
+# points(time,y,pch="+",cex=0.5)
+```
+
+### Plotting a reconstruction of the fitted line to the air temp-water temp data
+
+Do this by looping through each iteraction of the MCMC output, each of which has a value for each parameter in your process equation, and making the fitted points by hand.
+
+```{r}
+# THIS CODE IS ADAPTED TO PART 3 BUT CAN BE UPDATED FOR THIS    ## adjust to zoom in and out
+out <- as.matrix(jags.out)       ## convert from coda to matrix  
+N_sim = 10000
+
+# Initialize vectors to store results
+x <- numeric(N_sim)
+predicted_lake_temp <- numeric(N_sim)
+
+# Loop through each row of the output matrix
+for(i in 1:N_sim) {
+  beta <- out[i, "beta0[1]"] # extract the value of beta for a given iteration from the output matrix
+  delta <- out[i, "beta0[2]"] # extract the value of delta for a given iteration from the output matrix
+  x[i] <- out[i, "tau_add"] # extract the estimated latent variable at the previous time step
+  predicted_lake_temp[i] <- beta * x[i] + delta * temp
+}
+
+str(predicted_lake_temp) # this now had a vector for each iteration and then will need to summarize this to make it work for plotting
+
+library(dplyr)
+library(purrr)
+# Extract the first element from each vector in predicted_lake_temp and calculate the average
+average_values <- numeric(73)
+
+# Loop through each position (1 to 73)
+for (i in 1:73) {
+  # Extract values at position i from all vectors in predicted_lake_temp
+  values <- sapply(predicted_lake_temp, `[`, i)
+  # Calculate the average for position i
+  average_values[i] <- mean(values, na.rm = TRUE)
+}
+
+# Plot the average values
+predictedWaterTemp <- plot(average_values, type = "l", col = "blue",
+     main = "Average Predicted Lake Temperature",
+     xlab = "Time Step", ylab = "Average Temperature")
+
+# Plot each element of predicted_lake_temp -- makes 10000 plots as is
+#for (i in 1:length(predicted_lake_temp)) {
+#  plot(predicted_lake_temp[[i]], type = "l", col = "blue", ylim = c(-1000, 1000),
+#       main = "Predicted Lake Temperature", xlab = "Time Step", ylab = "Temperature")
+#}
+
+# Add a legend
+#legend("topright", legend = 1:length(predicted_lake_temp), col = "blue", lty = 1, title = "Iteration")
+
+```
+
+###Next, lets look at the posterior distributions for `tau_add` and `tau_obs`, which we'll convert from precisions back into **standard deviations**.
+
+```{r}
+hist(1/sqrt(out[,1]),main=colnames(out)[1])
+hist(1/sqrt(out[,2]),main=colnames(out)[2])
+hist(1/sqrt(out[,3]),main=colnames(out)[3])
+hist(1/sqrt(out[,4]),main=colnames(out)[4])
+```
+
+### We'll also want to look at the joint distribution of the two parameters to check whether the two parameters strongly covary.
+
+```{r, fig.asp = 1.0}
+plot(out[,1],out[,2],pch=".",xlab=colnames(out)[1],ylab=colnames(out)[2])
+cor(out[,1:2])
+```

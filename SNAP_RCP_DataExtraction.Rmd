@@ -9,13 +9,13 @@ output: word_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-# Attempting to extract the RCP data from the geotiff files
-Advice online recommends opening the geotiff data files in R and then exporting them as other formats from R, we are going to attempt this
+# Attempting to extract the RCP data from the .csv file
 
-## Starting with the RCP 4.5 geotiff file
+Read in the original file (with the header removed)
+
+## Starting with pulling out the RCP 4.5 data
+
 ```{r}
-library(raster)
-library(gdalUtilities)
-gdalinfo("tas_mean_C_ar5_5ModelAvg_rcp45_01_2006.tif")
+
 ```
 
