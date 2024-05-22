@@ -1,5 +1,5 @@
 ---
-title: "SNAP_RCP_DataExtraction_YF"
+title: "SNAP_RCP_DataExtractionOrganization"
 author: "Amaryllis Adey"
 date: "`r Sys.Date()`"
 output: word_document
@@ -20,6 +20,9 @@ Read in the original file (with the header removed)
 
 ## Starting with pulling out the RCP 4.5 data
 
+### Copper River Delta
+
+
 ```{r}
 CR_snapTemp <- read.csv("DataFiles/CordovaMonthlyTemperatures.csv", header = TRUE)
 
@@ -36,22 +39,11 @@ CR_4.5 <- CR_snapTemp %>%
 
 # reorder by month-date
 test <- CR_4.5 %>%
-  mutate(month = recode(month,
-                        January = 01,
-                        February = 02,
-                        March = 03,
-                        April = 04,
-                        May = 05,
-                        June = 06,
-                        July = 07,
-                        August = 08,
-                        September = 09,
-                        October = 10,
-                        November = 11,
-                        December = 12))
-test <- test %>%
-  mutate(as.Date(month))
-test <- CR_4.5 %>%
-  arrange(year, month)
+  mutate(date = as.Date(date, "%Y%m%d")) %>%
+  select(date, tasmin, tasmean, tasmax) %>%
+  arrange(date)
+
+CR_4.5 <- test
+
 ```
 
