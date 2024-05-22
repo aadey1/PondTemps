@@ -10,18 +10,19 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 Setting up the workspace
+
 ```{r}
 library(dplyr)
+library(ggplot2)
 ```
 
 # Attempting to extract the RCP data from the .csv file
 
-Read in the original file (with the header removed)
+## Starting with the RCP 4.5 data
 
-## Starting with pulling out the RCP 4.5 data
+### Extract the data
 
-### Copper River Delta
-
+#### Copper River Delta
 
 ```{r}
 CR_snapTemp <- read.csv("DataFiles/CordovaMonthlyTemperatures.csv", header = TRUE)
@@ -44,6 +45,229 @@ test <- CR_4.5 %>%
   arrange(date)
 
 CR_4.5 <- test
-
 ```
 
+#### Yakutat Forelands
+
+```{r}
+YF_snapTemp <- read.csv("DataFiles/YakutatMonthlyTemperatures.csv", header = TRUE)
+
+# Pull out only the RCP 4.5 data
+YF_4.5 <- YF_snapTemp %>%
+  filter(scenario == "rcp45")
+
+# Check the model options here
+unique(YF_4.5$model) # "5ModelAvg"  "GFDL-CM3"   "NCAR-CCSM4"
+
+# using the 5ModelAvg for now 
+YF_4.5 <- YF_snapTemp %>%
+  filter(scenario == "rcp45" & model == "5ModelAvg")
+
+# reorder by month-date
+test <- YF_4.5 %>%
+  mutate(date = as.Date(date, "%Y%m%d")) %>%
+  select(date, tasmin, tasmean, tasmax) %>%
+  arrange(date)
+
+YF_4.5 <- test
+```
+
+### Plot the forecasted data
+
+#### Copper River Delta
+
+```{r}
+CR_4.5
+
+# Full time frame (2006-2100)
+CR_SNAP <- ggplot(data = CR_4.5, mapping = aes(x = date)) +
+  geom_line(aes(y = tasmean), linewidth = 0.2) +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Copper River SNAP Forecast - RCP 4.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+CR_SNAP
+
+ggsave("Plots/CR_SNAP_Forecast4.5.jpeg", plot = CR_SNAP, width = 8, height = 6)
+
+# Limited time frame (2020-2100)
+test <- CR_4.5 %>%
+  filter(date > "2019-12-01")
+
+CR_4.5 <- test
+
+CR_SNAP <- ggplot(data = CR_4.5, mapping = aes(x = date)) +
+  geom_line(aes(y = tasmean), linewidth = 0.2) +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Copper River SNAP Forecast - RCP 4.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+CR_SNAP
+
+ggsave("Plots/CR_SNAP_Forecast4.5_2020.jpeg", plot = CR_SNAP, width = 8, height = 6)
+```
+
+#### Yakutat Forelands
+
+```{r}
+YF_4.5
+
+# Full time frame (2006-2100)
+YF_SNAP <- ggplot(data = YF_4.5, mapping = aes(x = date)) +
+  geom_line(aes(y = tasmean), linewidth = 0.2) +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Yakutat Forelands SNAP Forecast - RCP 4.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+YF_SNAP
+
+ggsave("Plots/YF_SNAP_Forecast4.5.jpeg", plot = YF_SNAP, width = 8, height = 6)
+
+# Limited time frame (2020-2100)
+test <- YF_4.5 %>%
+  filter(date > "2019-12-01")
+
+YF_4.5 <- test
+
+YF_SNAP <- ggplot(data = YF_4.5, mapping = aes(x = date)) +
+  geom_line(aes(y = tasmean), linewidth = 0.2) +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Yakutat Forelands SNAP Forecast - RCP 4.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+YF_SNAP
+
+ggsave("Plots/YF_SNAP_Forecast4.5_2020.jpeg", plot = YF_SNAP, width = 8, height = 6)
+```
+
+## Continuing with the RCP 8.5 data
+
+### Extract the data
+
+#### Copper River Delta
+
+```{r}
+CR_snapTemp <- read.csv("DataFiles/CordovaMonthlyTemperatures.csv", header = TRUE)
+
+# Pull out only the RCP 4.5 data
+CR_8.5 <- CR_snapTemp %>%
+  filter(scenario == "rcp85")
+
+# Check the model options here
+unique(CR_8.5$model) # "5ModelAvg"  "GFDL-CM3"   "NCAR-CCSM4"
+
+# using the 5ModelAvg for now 
+CR_8.5 <- CR_snapTemp %>%
+  filter(scenario == "rcp85" & model == "5ModelAvg")
+
+# reorder by month-date
+test <- CR_8.5 %>%
+  mutate(date = as.Date(date, "%Y%m%d")) %>%
+  select(date, tasmin, tasmean, tasmax) %>%
+  arrange(date)
+
+CR_8.5 <- test
+CR_8.5
+```
+
+#### Yakutat Forelands
+
+```{r}
+YF_snapTemp <- read.csv("DataFiles/YakutatMonthlyTemperatures.csv", header = TRUE)
+
+# Pull out only the RCP 4.5 data
+YF_8.5 <- YF_snapTemp %>%
+  filter(scenario == "rcp85")
+
+# Check the model options here
+unique(YF_8.5$model) # "5ModelAvg"  "GFDL-CM3"   "NCAR-CCSM4"
+
+# using the 5ModelAvg for now 
+YF_8.5 <- YF_snapTemp %>%
+  filter(scenario == "rcp85" & model == "5ModelAvg")
+
+# reorder by month-date
+test <- YF_8.5 %>%
+  mutate(date = as.Date(date, "%Y%m%d")) %>%
+  select(date, tasmin, tasmean, tasmax) %>%
+  arrange(date)
+
+YF_8.5 <- test
+YF_8.5
+```
+
+### Plot the forecasted data
+
+#### Copper River Delta
+
+```{r}
+CR_8.5
+
+# Full time frame (2006-2100)
+CR_SNAP <- ggplot(data = CR_8.5, mapping = aes(x = date)) +
+  geom_line(aes(y = tasmean), linewidth = 0.2) +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Copper River SNAP Forecast - RCP 8.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+CR_SNAP
+
+ggsave("Plots/CR_SNAP_Forecast8.5.jpeg", plot = CR_SNAP, width = 8, height = 6)
+
+# Limited time frame (2020-2100)
+test <- CR_8.5 %>%
+  filter(date > "2019-12-01")
+
+CR_8.5 <- test
+
+CR_SNAP <- ggplot(data = CR_8.5, mapping = aes(x = date)) +
+  geom_line(aes(y = tasmean), linewidth = 0.2) +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Copper River SNAP Forecast - RCP 8.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+CR_SNAP
+
+ggsave("Plots/CR_SNAP_Forecast8.5_2020.jpeg", plot = CR_SNAP, width = 8, height = 6)
+```
+
+#### Yakutat Forelands
+
+```{r}
+YF_8.5
+
+# Full time frame (2006-2100)
+YF_SNAP <- ggplot(data = YF_8.5, mapping = aes(x = date)) +
+  geom_line(aes(y = tasmean), linewidth = 0.2) +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Yakutat Forelands SNAP Forecast - RCP 8.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+YF_SNAP
+
+ggsave("Plots/YF_SNAP_Forecast8.5.jpeg", plot = YF_SNAP, width = 8, height = 6)
+
+# Limited time frame (2020-2100)
+test <- YF_8.5 %>%
+  filter(date > "2019-12-01")
+
+YF_8.5 <- test
+
+YF_SNAP <- ggplot(data = YF_8.5, mapping = aes(x = date)) +
+  geom_line(aes(y = tasmean), linewidth = 0.2) +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Yakutat Forelands SNAP Forecast - RCP 8.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+YF_SNAP
+
+ggsave("Plots/YF_SNAP_Forecast8.5_2020.jpeg", plot = YF_SNAP, width = 8, height = 6)
+```
