@@ -785,6 +785,35 @@ str(CR_PondAirTemp_min)
   
 ```
 
+# Part 6 - Adding in a column that is the std of the air temperature in the mean files
+
+AW recommended doing that as std = (max - min)/4
+  AA increased the denominator here because the error for the observed data is way higher than for the forecastsed data
+  
+Copper River Delta
+```{r}
+CR_PondAirTemp_mean
+
+test <- CR_PondAirTemp_mean
+
+test$std <- (test$Air_MonthMax - test$Air_MonthMin)/10
+test$precision <- (1/(test$std^2))
+
+CR_PondAirTemp_mean <- test
+```
+
+Yakutat Forelands
+```{r}
+YF_PondAirTemp_mean
+
+test <- YF_PondAirTemp_mean
+
+test$std <- (test$Air_MonthMax - test$Air_MonthMin)/10
+test$precision <- (1/(test$std^2))
+
+YF_PondAirTemp_mean <- test
+```
+
 # Part 6 - Save the data files as .csv files to be loaded into other code here
 
 ```{r}
