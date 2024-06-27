@@ -1,0 +1,190 @@
+---
+title: "CORDEX Data Summaries"
+author: "Amaryllis Adey"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("/Users/amaryllisadey/Dropbox/SWEL/CopperRiverDelta/PondTemps/DataAnalysis/PondTempsAnalysis_GIT/")
+```
+
+```{r}
+#Packages
+library(dplyr)
+library(ggpubr)
+library(ggsci)
+library(Rcpp)
+library(reshape)
+library(lubridate)
+library(naniar)
+library(gtools)
+library(tidyr)
+library(ncdf4)
+library(raster)
+library(sf)
+library(tidync)
+library(dplyr)
+library(datetime)
+```
+
+Working with RCP 4.5 data
+
+```{r}
+#Read in all of the RCP 4.5 data
+RCP45 <- tidync("/Users/amaryllisadey/Dropbox/SWEL/CopperRiverDelta/PondTemps/DataAnalysis/PondTempsAnalysis_GIT/DataFiles/CORDEX/CORDEX_RCP45/CORDEX_45.nc")
+
+#Filter the data to the CRD
+test <- RCP45
+
+# Tell R what the target values are
+CRD_target_lat <- 60.5437
+CRD_target_lon <- 145.7260
+
+# Filter this to the Lat Long
+test_filtered <- test %>%
+  hyper_filter(lat = between(abs(lat), CRD_target_lat-0.25, CRD_target_lat+0.25), 
+               lon = between(abs(lon), CRD_target_lon-0.25, CRD_target_lon+0.25)) %>%
+  hyper_tibble()
+
+print(test_filtered)
+
+CRD_45 <- test_filtered
+rm(test_filtered)
+
+# Attemp to change the cordex time
+test <- CRD_45 %>%
+  group_by(time) %>%
+  summarize(avgTemp = mean(t), stdTemp = sd(t)) %>%
+  ungroup() %>%
+  mutate(date_time = as.Date(time)) 
+test2 <- test %>%
+  mutate(date_time = date_time %m-%years(120)) %>%
+  ungroup() %>%
+  dplyr::select(date_time, avgTemp, stdTemp)
+
+CRD_45 <- test2
+
+rm(test, test2)
+
+#Filter the data to the YF
+test <- RCP45
+
+# Tell R what the target values are
+YF_target_lat <- 59.5089
+YF_target_lon <- 139.6599
+
+# Filter this to Lat Long
+test_filtered <- test %>%
+  hyper_filter(lat = between(abs(lat), YF_target_lat-0.25, YF_target_lat+0.25), 
+               lon = between(abs(lon), YF_target_lon-0.25, YF_target_lon+0.25)) %>%
+  hyper_tibble()
+
+print(test_filtered)
+
+YF_45 <- test_filtered
+rm(test_filtered)
+
+# Attemp to change the cordex time
+test <- YF_45 %>%
+  group_by(time) %>%
+  summarize(avgTemp = mean(t), stdTemp = sd(t)) %>%
+  ungroup() %>%
+  mutate(date_time = as.Date(time)) 
+test2 <- test %>%
+  mutate(date_time = date_time %m-%years(120)) %>%
+  ungroup() %>%
+  dplyr::select(date_time, avgTemp, stdTemp)
+
+YF_45 <- test2
+
+rm(test, test2)
+
+```
+
+Working with RCP 8.5 data
+
+```{r}
+#Read in all of the RCP 4.5 data
+RCP85 <- tidync("/Users/amaryllisadey/Dropbox/SWEL/CopperRiverDelta/PondTemps/DataAnalysis/PondTempsAnalysis_GIT/DataFiles/CORDEX/CORDEX_RCP85/CORDEX_85.nc")
+
+#Filter the data to the CRD
+test <- RCP85
+
+# Tell R what the target values are
+CRD_target_lat <- 60.5437
+CRD_target_lon <- 145.7260
+
+# Filter this to the Lat Long
+test_filtered <- test %>%
+  hyper_filter(lat = between(abs(lat), CRD_target_lat-0.25, CRD_target_lat+0.25), 
+               lon = between(abs(lon), CRD_target_lon-0.25, CRD_target_lon+0.25)) %>%
+  hyper_tibble()
+
+print(test_filtered)
+
+CRD_85 <- test_filtered
+rm(test_filtered)
+
+# Attemp to change the cordex time
+test <- CRD_85 %>%
+  group_by(time) %>%
+  summarize(avgTemp = mean(t), stdTemp = sd(t)) %>%
+  ungroup() %>%
+  mutate(date_time = as.Date(time)) 
+test2 <- test %>%
+  mutate(date_time = date_time %m-%years(120)) %>%
+  ungroup() %>%
+  dplyr::select(date_time, avgTemp, stdTemp)
+
+CRD_85 <- test2
+
+rm(test, test2)
+
+#Filter the data to the YF
+test <- RCP85
+
+# Tell R what the target values are
+YF_target_lat <- 59.5089
+YF_target_lon <- 139.6599
+
+# Filter this to Lat Long
+test_filtered <- test %>%
+  hyper_filter(lat = between(abs(lat), YF_target_lat-0.25, YF_target_lat+0.25), 
+               lon = between(abs(lon), YF_target_lon-0.25, YF_target_lon+0.25)) %>%
+  hyper_tibble()
+
+print(test_filtered)
+
+YF_85 <- test_filtered
+rm(test_filtered)
+
+# Attemp to change the cordex time
+test <- YF_85 %>%
+  group_by(time) %>%
+  summarize(avgTemp = mean(t), stdTemp = sd(t)) %>%
+  ungroup() %>%
+  mutate(date_time = as.Date(time)) 
+test2 <- test %>%
+  mutate(date_time = date_time %m-% years(120)) %>%
+  dplyr::select(date_time, avgTemp, stdTemp)
+
+YF_85 <- test2
+
+rm(test, test2)
+
+```
+
+Saving the files as .csv files that can be loaded into other code
+
+```{r}
+setwd("/Users/amaryllisadey/Dropbox/SWEL/CopperRiverDelta/PondTemps/DataAnalysis/PondTempsAnalysis_GIT")
+
+write.csv(CRD_45, "CORDEX_CRD_45.csv")
+write.csv(CRD_85, "CORDEX_CRD_85.csv")
+
+write.csv(YF_45, "CORDEX_YF_45.csv")
+write.csv(YF_85, "CORDEX_YF_85.csv")
+
+```

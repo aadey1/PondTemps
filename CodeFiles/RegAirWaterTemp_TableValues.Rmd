@@ -1,0 +1,181 @@
+---
+title: "RegAirWaterTemp"
+author: "Amaryllis Adey"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load in the CR dataset 
+```{r}
+CR_Temps <- read.csv("DataFiles/CR_45Forecast.csv", header=TRUE)
+
+library(dplyr)
+# remove the first column here and change the column for Date to date
+
+CR_Temps <- CR_Temps[,-1]
+head(CR_Temps)
+
+obsData <- CR_Temps %>%
+  filter(date < "2021-01-01")
+
+```
+
+Fitting the models for each of the ponds
+```{r}
+# BVS
+lm1 <- lm(obsData$BVS ~ obsData$Air_MonthAvg)
+summary(lm1)
+
+```
+
+```{r}
+# CAB
+lm2 <- lm(obsData$CAB ~ obsData$Air_MonthAvg)
+summary(lm2)
+
+```
+
+```{r}
+# CAN
+lm3 <- lm(obsData$CAN ~ obsData$Air_MonthAvg)
+summary(lm3)
+
+```
+
+
+```{r}
+# EYS
+lm4 <- lm(obsData$EYS ~ obsData$Air_MonthAvg)
+summary(lm4)
+
+```
+
+```{r}
+# RHM
+lm5 <- lm(obsData$RHM ~ obsData$Air_MonthAvg)
+summary(lm5)
+
+```
+
+```{r}
+# RHM
+lm6 <- lm(obsData$SQR ~ obsData$Air_MonthAvg)
+summary(lm6)
+
+```
+
+```{r}
+# RHM
+lm7 <- lm(obsData$TIN ~ obsData$Air_MonthAvg)
+summary(lm7)
+
+```
+
+```{r}
+# RHM
+lm8 <- lm(obsData$TIS ~ obsData$Air_MonthAvg)
+summary(lm5)
+
+```
+
+```{r}
+# RHM
+lm9 <- lm(obsData$WDD~ obsData$Air_MonthAvg)
+summary(lm9)
+
+```
+
+# Load in the YF dataset 
+```{r}
+YF_Temps <- read.csv("DataFiles/YF_45Forecast.csv", header=TRUE)
+
+library(dplyr)
+# remove the first column here and change the column for Date to date
+
+YF_Temps <- YF_Temps[,-1]
+head(YF_Temps)
+
+obsData <- YF_Temps %>%
+  filter(date < "2021-01-01")
+obsData
+
+```
+
+```{r}
+# RHM
+lm1 <- lm(obsData$MP1 ~ obsData$Air_MonthAvg)
+summary(lm1)
+
+```
+
+```{r}
+# RHM
+lm2 <- lm(obsData$MP3 ~ obsData$Air_MonthAvg)
+summary(lm2)
+
+```
+
+```{r}
+# RHM
+lm3 <- lm(obsData$MP5~ obsData$Air_MonthAvg)
+summary(lm3)
+
+```
+
+```{r}
+# RHM
+lm4 <- lm(obsData$MP8~ obsData$Air_MonthAvg)
+summary(lm4)
+
+```
+
+```{r}
+# RHM
+lm5 <- lm(obsData$PL1~ obsData$Air_MonthAvg)
+summary(lm5)
+
+```
+
+```{r}
+# RHM
+lm6 <- lm(obsData$PL2~ obsData$Air_MonthAvg)
+summary(lm6)
+
+```
+
+```{r}
+# RHM
+lm7 <- lm(obsData$PL3~ obsData$Air_MonthAvg)
+summary(lm7)
+
+```
+
+```{r}
+# RHM
+lm8 <- lm(obsData$UBP1~ obsData$Air_MonthAvg)
+summary(lm8)
+
+```
+
+```{r}
+# RHM
+lm9 <- lm(obsData$UBP2~ obsData$Air_MonthAvg)
+summary(lm9)
+
+```
+
+```{r}
+# RHM
+lm10 <- lm(obsData$UBP3~ obsData$Air_MonthAvg)
+summary(lm10)
+```
+
+```{r}
+# RHM
+lm11 <- lm(obsData$UBP4~ obsData$Air_MonthAvg)
+summary(lm11)
+```

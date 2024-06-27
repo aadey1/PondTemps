@@ -1,0 +1,755 @@
+---
+title: "SNAP_RCP_DataExtractionOrganization"
+author: "Amaryllis Adey"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Setting up the workspace
+
+```{r}
+library(dplyr)
+library(ggplot2)
+```
+
+# Attempting to extract the RCP data from the .csv file
+
+## Starting with the RCP 4.5 data
+
+### Extract the data
+
+#### Copper River Delta
+
+```{r}
+CR_snapTemp <- read.csv("DataFiles/CordovaMonthlyTemperatures.csv", header = TRUE)
+
+# Pull out only the RCP 4.5 data
+CR_4.5 <- CR_snapTemp %>%
+  filter(scenario == "rcp45")
+
+# Check the model options here
+unique(CR_4.5$model) # "5ModelAvg"  "GFDL-CM3"   "NCAR-CCSM4"
+
+# using the 5ModelAvg for now 
+CR_4.5 <- CR_snapTemp %>%
+  filter(scenario == "rcp45" & model == "5ModelAvg")
+
+# reorder by month-date
+test <- CR_4.5 %>%
+  mutate(date = as.Date(date, "%Y%m%d")) %>%
+  select(date, tasmin, tasmean, tasmax) %>%
+  arrange(date)
+
+test$std <- (test$tasmax - test$tasmin)/2
+test$precision <- (1/(test$std^2))
+
+CR_4.5 <- test
+CR_4.5
+```
+
+#### Yakutat Forelands
+
+```{r}
+YF_snapTemp <- read.csv("DataFiles/YakutatMonthlyTemperatures.csv", header = TRUE)
+
+# Pull out only the RCP 4.5 data
+YF_4.5 <- YF_snapTemp %>%
+  filter(scenario == "rcp45")
+
+# Check the model options here
+unique(YF_4.5$model) # "5ModelAvg"  "GFDL-CM3"   "NCAR-CCSM4"
+
+# using the 5ModelAvg for now 
+YF_4.5 <- YF_snapTemp %>%
+  filter(scenario == "rcp45" & model == "5ModelAvg")
+
+# reorder by month-date
+test <- YF_4.5 %>%
+  mutate(date = as.Date(date, "%Y%m%d")) %>%
+  select(date, tasmin, tasmean, tasmax) %>%
+  arrange(date)
+
+test$std <- (test$tasmax - test$tasmin)/2
+test$precision <- (1/(test$std^2))
+
+YF_4.5 <- test
+YF_4.5
+```
+
+### Plot the forecasted data
+
+#### Copper River Delta
+
+```{r}
+CR_4.5
+
+# Full time frame (2006-2100)
+CR_SNAP <- ggplot(data = CR_4.5, mapping = aes(x = date)) +
+  geom_line(aes(y = tasmean), linewidth = 0.2) +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Copper River SNAP Forecast - RCP 4.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+CR_SNAP
+
+ggsave("Plots/CR_SNAP_Forecast4.5.jpeg", plot = CR_SNAP, width = 8, height = 6)
+
+# Limited time frame (2020-2100)
+test <- CR_4.5 %>%
+  filter(date > "2019-12-01")
+
+CR_4.5 <- test
+
+CR_SNAP <- ggplot(data = CR_4.5, mapping = aes(x = date)) +
+  geom_line(aes(y = tasmean), linewidth = 0.2) +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Copper River SNAP Forecast - RCP 4.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+CR_SNAP
+
+ggsave("Plots/CR_SNAP_Forecast4.5_2020.jpeg", plot = CR_SNAP, width = 8, height = 6)
+```
+
+#### Yakutat Forelands
+
+```{r}
+YF_4.5
+
+# Full time frame (2006-2100)
+YF_SNAP <- ggplot(data = YF_4.5, mapping = aes(x = date)) +
+  geom_line(aes(y = tasmean), linewidth = 0.2) +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Yakutat Forelands SNAP Forecast - RCP 4.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+YF_SNAP
+
+ggsave("Plots/YF_SNAP_Forecast4.5.jpeg", plot = YF_SNAP, width = 8, height = 6)
+
+# Limited time frame (2020-2100)
+test <- YF_4.5 %>%
+  filter(date > "2019-12-01")
+
+YF_4.5 <- test
+
+YF_SNAP <- ggplot(data = YF_4.5, mapping = aes(x = date)) +
+  geom_line(aes(y = tasmean), linewidth = 0.2) +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Yakutat Forelands SNAP Forecast - RCP 4.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+YF_SNAP
+
+ggsave("Plots/YF_SNAP_Forecast4.5_2020.jpeg", plot = YF_SNAP, width = 8, height = 6)
+```
+
+## Continuing with the RCP 8.5 data
+
+### Extract the data
+
+#### Copper River Delta
+
+```{r}
+CR_snapTemp <- read.csv("DataFiles/CordovaMonthlyTemperatures.csv", header = TRUE)
+
+# Pull out only the RCP 4.5 data
+CR_8.5 <- CR_snapTemp %>%
+  filter(scenario == "rcp85")
+
+# Check the model options here
+unique(CR_8.5$model) # "5ModelAvg"  "GFDL-CM3"   "NCAR-CCSM4"
+
+# using the 5ModelAvg for now 
+CR_8.5 <- CR_snapTemp %>%
+  filter(scenario == "rcp85" & model == "5ModelAvg")
+
+# reorder by month-date
+test <- CR_8.5 %>%
+  mutate(date = as.Date(date, "%Y%m%d")) %>%
+  select(date, tasmin, tasmean, tasmax) %>%
+  arrange(date)
+
+test$std <- (test$tasmax - test$tasmin)/2
+test$precision <- (1/(test$std^2))
+
+CR_8.5 <- test
+CR_8.5
+```
+
+#### Yakutat Forelands
+
+```{r}
+YF_snapTemp <- read.csv("DataFiles/YakutatMonthlyTemperatures.csv", header = TRUE)
+
+# Pull out only the RCP 4.5 data
+YF_8.5 <- YF_snapTemp %>%
+  filter(scenario == "rcp85")
+
+# Check the model options here
+unique(YF_8.5$model) # "5ModelAvg"  "GFDL-CM3"   "NCAR-CCSM4"
+
+# using the 5ModelAvg for now 
+YF_8.5 <- YF_snapTemp %>%
+  filter(scenario == "rcp85" & model == "5ModelAvg")
+
+# reorder by month-date
+test <- YF_8.5 %>%
+  mutate(date = as.Date(date, "%Y%m%d")) %>%
+  select(date, tasmin, tasmean, tasmax) %>%
+  arrange(date)
+
+test$std <- (test$tasmax - test$tasmin)/2
+test$precision <- (1/(test$std^2))
+
+YF_8.5 <- test
+YF_8.5
+```
+
+### Plot the forecasted data
+
+#### Copper River Delta
+
+```{r}
+CR_8.5
+
+# Full time frame (2006-2100)
+CR_SNAP <- ggplot(data = CR_8.5, mapping = aes(x = date)) +
+  geom_line(aes(y = tasmean), linewidth = 0.2) +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Copper River SNAP Forecast - RCP 8.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+CR_SNAP
+
+ggsave("Plots/CR_SNAP_Forecast8.5.jpeg", plot = CR_SNAP, width = 8, height = 6)
+
+# Limited time frame (2020-2100)
+test <- CR_8.5 %>%
+  filter(date > "2019-12-01")
+
+CR_8.5 <- test
+
+CR_SNAP <- ggplot(data = CR_8.5, mapping = aes(x = date)) +
+  geom_line(aes(y = tasmean), linewidth = 0.2) +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Copper River SNAP Forecast - RCP 8.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+CR_SNAP
+
+ggsave("Plots/CR_SNAP_Forecast8.5_2020.jpeg", plot = CR_SNAP, width = 8, height = 6)
+```
+
+#### Yakutat Forelands
+
+```{r}
+YF_8.5
+
+# Full time frame (2006-2100)
+YF_SNAP <- ggplot(data = YF_8.5, mapping = aes(x = date)) +
+  geom_line(aes(y = tasmean), linewidth = 0.2) +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Yakutat Forelands SNAP Forecast - RCP 8.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+YF_SNAP
+
+ggsave("Plots/YF_SNAP_Forecast8.5.jpeg", plot = YF_SNAP, width = 8, height = 6)
+
+# Limited time frame (2020-2100)
+test <- YF_8.5 %>%
+  filter(date > "2019-12-01")
+
+YF_8.5 <- test
+
+YF_SNAP <- ggplot(data = YF_8.5, mapping = aes(x = date)) +
+  geom_line(aes(y = tasmean), linewidth = 0.2) +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Yakutat Forelands SNAP Forecast - RCP 8.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+YF_SNAP
+
+ggsave("Plots/YF_SNAP_Forecast8.5_2020.jpeg", plot = YF_SNAP, width = 8, height = 6)
+```
+
+# Appending the Temperature Forecasts to the observed data
+
+## Starting with RCP 4.5
+
+### Creating a dataframe with missing values for all other aspects
+
+Determining the columns needed for this
+
+```{r}
+CR_ObsData <- read.csv("DataFiles/CR_PondAirTemp_mean.csv", header=TRUE)
+head(CR_ObsData)
+
+# remove the first column here and change the column for Date to date
+  # Date is a function of some sort so could be the source of errors
+CR_ObsData <- CR_ObsData %>%
+  rename(date=Date)
+CR_ObsData <- CR_ObsData[,-1]
+head(CR_ObsData)
+
+CR_ObsData <- CR_ObsData %>%
+  select(date, Airport, Air_MonthAvg, std, precision, Region, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD)
+CR_ObsData
+```
+
+Columns needed are date, Airport, Air_MonthAvg, Air_MonthMax, Air_MonthMin, Region, TIN, SQR, TIS, CAB, EYS, RHM, BVS, CAN, WDD
+
+#### Copper River Delta
+
+Checking the dimensions of the dataframe
+
+```{r}
+CR_4.5
+dim(CR_4.5) # 972 rows here, so need to make 972 blank rows
+```
+
+Checking the observational data
+
+```{r}
+CR_ObsData <- read.csv("DataFiles/CR_PondAirTemp_mean.csv", header=TRUE)
+head(CR_ObsData)
+
+# remove the first column here and change the column for Date to date
+  # Date is a function of some sort so could be the source of errors
+CR_ObsData <- CR_ObsData %>%
+  rename(date=Date)
+CR_ObsData <- CR_ObsData[,-1]
+head(CR_ObsData)
+
+CR_ObsData <- CR_ObsData %>%
+  select(date, Airport, Air_MonthAvg, std, precision, Region, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD)
+CR_ObsData
+```
+
+Creating an empty dataframe
+
+```{r}
+CR_df <- CR_ObsData[0,]
+str(CR_df)
+
+attr(CR_df, 'row.names') <- 1:nrow(CR_4.5)
+
+str(CR_df)
+```
+
+#### Yakutat Forelands
+
+Checking the dimensions of the dataframe
+
+```{r}
+YF_4.5
+dim(YF_4.5) # 972 rows here, so need to make 972 blank rows
+```
+
+Checking the observational data
+
+```{r}
+YF_ObsData <- read.csv("DataFiles/YF_PondAirTemp_mean.csv", header=TRUE)
+head(YF_ObsData)
+
+# remove the first column here and change the column for Date to date
+  # Date is a function of some sort so could be the source of errors
+YF_ObsData <- YF_ObsData %>%
+  rename(date=Date)
+YF_ObsData <- YF_ObsData[,-1]
+head(YF_ObsData)
+
+YF_ObsData <- YF_ObsData %>%
+  select(date, Airport, Air_MonthAvg, std, precision, Region,  MP1, MP3, PL3, PL2, UBP3, MP5, MP8, UBP1, UBP2, PL1, UBP4)
+YF_ObsData
+```
+
+Creating an empty dataframe
+
+```{r}
+YF_df <- YF_ObsData[0,]
+str(YF_df)
+
+attr(YF_df, 'row.names') <- 1:nrow(YF_4.5)
+
+str(YF_df)
+```
+
+### Adding in the data where it is available
+
+#### Copper River Delta
+
+```{r}
+CR_df
+
+#values where there is data
+CR_df$date <- CR_4.5$date
+CR_df$Air_MonthAvg <- CR_4.5$tasmean
+CR_df$std <- CR_4.5$std
+CR_df$precision <- CR_4.5$precision
+CR_df$Region <- rep("CR", nrow(CR_df))
+
+#values where there is not data
+CR_df$Airport <- rep(NA, nrow(CR_df))
+CR_df$BVS <- rep(NA, nrow(CR_df))
+CR_df$CAB <- rep(NA, nrow(CR_df))
+CR_df$CAN <- rep(NA, nrow(CR_df))
+CR_df$EYS <- rep(NA, nrow(CR_df))
+CR_df$RHM <- rep(NA, nrow(CR_df))
+CR_df$SQR <- rep(NA, nrow(CR_df))
+CR_df$TIN <- rep(NA, nrow(CR_df))
+CR_df$TIS <- rep(NA, nrow(CR_df))
+CR_df$WDD <- rep(NA, nrow(CR_df))
+
+str(CR_df)
+```
+
+Appending this new dataframe "df" to the CR_ObsData dataframe
+
+```{r}
+CR_df$date
+CR_ObsData$date <- as.Date(CR_ObsData$date)
+
+CR_new_df <- rbind(CR_ObsData, CR_df)
+
+str(CR_new_df)
+
+CR_45Forecast <- CR_new_df
+CR_45Forecast
+
+#save this as a .csv file
+write.csv(CR_45Forecast, file = "DataFiles/CR_45Forecast.csv")
+
+```
+
+#### Yakutat Forelands
+
+Adding in the data where it is available
+
+```{r}
+YF_df
+
+#values where there is data
+YF_df$date <- YF_4.5$date
+YF_df$Air_MonthAvg <- YF_4.5$tasmean
+YF_df$std <- YF_4.5$std
+YF_df$precision <- YF_4.5$precision
+YF_df$Region <- rep("YF", nrow(YF_df))
+
+#values where there is not data
+YF_df$Airport <- rep(NA, nrow(YF_df))
+YF_df$MP1<- rep(NA, nrow(YF_df))
+YF_df$MP3 <- rep(NA, nrow(YF_df))
+YF_df$MP5 <- rep(NA, nrow(YF_df))
+YF_df$MP8 <- rep(NA, nrow(YF_df))
+YF_df$PL1 <- rep(NA, nrow(YF_df))
+YF_df$PL2 <- rep(NA, nrow(YF_df))
+YF_df$PL3 <- rep(NA, nrow(YF_df))
+YF_df$UBP1 <- rep(NA, nrow(YF_df))
+YF_df$UBP2 <- rep(NA, nrow(YF_df))
+YF_df$UBP3 <- rep(NA, nrow(YF_df))
+YF_df$UBP4 <- rep(NA, nrow(YF_df))
+
+str(YF_df)
+```
+
+Appending this new dataframe "df" to the CR_ObsData dataframe
+
+```{r}
+YF_df
+YF_ObsData$date <- as.Date(YF_ObsData$date)
+
+YF_new_df <- rbind(YF_ObsData, YF_df)
+
+str(YF_new_df)
+
+YF_45Forecast <- YF_new_df
+YF_45Forecast
+
+#save this as a .csv file
+write.csv(YF_45Forecast, file = "DataFiles/YF_45Forecast.csv")
+
+```
+
+## Continuing with RCP 8.5
+
+### Creating a dataframe with missing values for all other aspects
+
+Determining the columns needed for this
+
+```{r}
+CR_ObsData <- read.csv("DataFiles/CR_PondAirTemp_mean.csv", header=TRUE)
+head(CR_ObsData)
+
+# remove the first column here and change the column for Date to date
+  # Date is a function of some sort so could be the source of errors
+CR_ObsData <- CR_ObsData %>%
+  rename(date=Date)
+CR_ObsData <- CR_ObsData[,-1]
+head(CR_ObsData)
+
+CR_ObsData <- CR_ObsData %>%
+  select(date, Airport, Air_MonthAvg, std, precision, Region, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD)
+CR_ObsData
+```
+
+Columns needed are date, Airport, Air_MonthAvg, Air_MonthMax, Air_MonthMin, Region, TIN, SQR, TIS, CAB, EYS, RHM, BVS, CAN, WDD
+
+#### Copper River Delta
+
+Checking the dimensions of the dataframe
+
+```{r}
+CR_8.5
+dim(CR_8.5) # 972 rows here, so need to make 972 blank rows
+```
+
+Checking the observational data
+
+```{r}
+CR_ObsData <- read.csv("DataFiles/CR_PondAirTemp_mean.csv", header=TRUE)
+head(CR_ObsData)
+
+# remove the first column here and change the column for Date to date
+  # Date is a function of some sort so could be the source of errors
+CR_ObsData <- CR_ObsData %>%
+  rename(date=Date)
+CR_ObsData <- CR_ObsData[,-1]
+head(CR_ObsData)
+
+CR_ObsData <- CR_ObsData %>%
+  select(date, Airport, Air_MonthAvg, std, precision, Region, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD)
+CR_ObsData
+```
+
+Creating an empty dataframe
+
+```{r}
+CR_df <- CR_ObsData[0,]
+str(CR_df)
+
+attr(CR_df, 'row.names') <- 1:nrow(CR_8.5)
+
+str(CR_df)
+```
+
+#### Yakutat Forelands
+
+Checking the dimensions of the dataframe
+
+```{r}
+YF_8.5
+dim(YF_8.5) # 972 rows here, so need to make 972 blank rows
+```
+
+Checking the observational data
+
+```{r}
+YF_ObsData <- read.csv("DataFiles/YF_PondAirTemp_mean.csv", header=TRUE)
+head(YF_ObsData)
+
+# remove the first column here and change the column for Date to date
+  # Date is a function of some sort so could be the source of errors
+YF_ObsData <- YF_ObsData %>%
+  rename(date=Date)
+YF_ObsData <- YF_ObsData[,-1]
+head(YF_ObsData)
+
+YF_ObsData <- YF_ObsData %>%
+  select(date, Airport, Air_MonthAvg, std, precision, Region,  MP1, MP3, PL3, PL2, UBP3, MP5, MP8, UBP1, UBP2, PL1, UBP4)
+YF_ObsData
+```
+
+Creating an empty dataframe
+
+```{r}
+YF_df <- YF_ObsData[0,]
+str(YF_df)
+
+attr(YF_df, 'row.names') <- 1:nrow(YF_8.5)
+
+str(YF_df)
+```
+
+### Adding in the data where it is available
+
+#### Copper River Delta
+
+```{r}
+CR_df
+
+#values where there is data
+CR_df$date <- CR_8.5$date
+CR_df$Air_MonthAvg <- CR_8.5$tasmean
+CR_df$std <- CR_8.5$std
+CR_df$precision <- CR_8.5$precision
+CR_df$Region <- rep("CR", nrow(CR_df))
+
+#values where there is not data
+CR_df$Airport <- rep(NA, nrow(CR_df))
+CR_df$BVS <- rep(NA, nrow(CR_df))
+CR_df$CAB <- rep(NA, nrow(CR_df))
+CR_df$CAN <- rep(NA, nrow(CR_df))
+CR_df$EYS <- rep(NA, nrow(CR_df))
+CR_df$RHM <- rep(NA, nrow(CR_df))
+CR_df$SQR <- rep(NA, nrow(CR_df))
+CR_df$TIN <- rep(NA, nrow(CR_df))
+CR_df$TIS <- rep(NA, nrow(CR_df))
+CR_df$WDD <- rep(NA, nrow(CR_df))
+
+str(CR_df)
+```
+
+Appending this new dataframe "df" to the CR_ObsData dataframe
+
+```{r}
+CR_df
+CR_ObsData$date <- as.Date(CR_ObsData$date)
+
+CR_new_df <- rbind(CR_ObsData, CR_df)
+
+str(CR_new_df)
+
+CR_85Forecast <- CR_new_df
+CR_8.5
+
+#save this as a .csv file
+write.csv(CR_85Forecast, file = "DataFiles/CR_85Forecast.csv")
+
+```
+
+#### Yakutat Forelands
+
+Adding in the data where it is available
+
+```{r}
+YF_df
+
+#values where there is data
+YF_df$date <- YF_8.5$date
+YF_df$Air_MonthAvg <- YF_8.5$tasmean
+YF_df$std <- YF_8.5$std
+YF_df$precision <- YF_8.5$precision
+YF_df$Region <- rep("YF", nrow(YF_df))
+
+#values where there is not data
+YF_df$Airport <- rep(NA, nrow(YF_df))
+YF_df$MP1<- rep(NA, nrow(YF_df))
+YF_df$MP3 <- rep(NA, nrow(YF_df))
+YF_df$MP5 <- rep(NA, nrow(YF_df))
+YF_df$MP8 <- rep(NA, nrow(YF_df))
+YF_df$PL1 <- rep(NA, nrow(YF_df))
+YF_df$PL2 <- rep(NA, nrow(YF_df))
+YF_df$PL3 <- rep(NA, nrow(YF_df))
+YF_df$UBP1 <- rep(NA, nrow(YF_df))
+YF_df$UBP2 <- rep(NA, nrow(YF_df))
+YF_df$UBP3 <- rep(NA, nrow(YF_df))
+YF_df$UBP4 <- rep(NA, nrow(YF_df))
+
+str(YF_df)
+```
+
+Appending this new dataframe "df" to the CR_ObsData dataframe
+
+```{r}
+YF_df
+YF_ObsData$date <- as.Date(YF_ObsData$date)
+
+YF_new_df <- rbind(YF_ObsData, YF_df)
+
+str(YF_new_df)
+
+YF_85Forecast <- YF_new_df
+YF_85Forecast
+
+#save this as a .csv file
+write.csv(YF_85Forecast, file = "DataFiles/YF_85Forecast.csv")
+
+```
+
+# Attemping a quick plot of this data for both CR and YF
+
+## RCP 4.5
+
+### Copper River Delta
+
+```{r}
+CR_45Forecast 
+
+CR_45Temps<- ggplot(data = CR_45Forecast, mapping = aes(x = date)) +
+  geom_line(mapping = aes(y = Air_MonthAvg)) +
+  xlab("Year") +
+  ylab("Mean Temperature (C)") +
+  ggtitle("Copper River Delta Temperature - RCP 4.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+CR_45Temps
+
+ggsave("Plots/CR_45Temps.jpeg", plot = CR_45Temps, width = 8, height = 6)
+```
+
+### Yakutat Forelands
+
+```{r}
+YF_45Forecast 
+
+YF_45Temps<- ggplot(data = YF_45Forecast, mapping = aes(x = date)) +
+  geom_line(mapping = aes(y = Air_MonthAvg)) +
+  xlab("Year") +
+  ylab("Mean Temperature (C)") +
+  ggtitle("Yakutat Forelands Temperature - RCP 4.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+YF_45Temps
+
+ggsave("Plots/YF_45Temps.jpeg", plot = YF_45Temps, width = 8, height = 6)
+```
+
+## RCP 8.5
+
+### Copper River Delta
+
+```{r}
+CR_85Forecast 
+
+CR_85Temps<- ggplot(data = CR_85Forecast, mapping = aes(x = date)) +
+  geom_line(mapping = aes(y = Air_MonthAvg)) +
+  xlab("Year") +
+  ylab("Mean Temperature (C)") +
+  ggtitle("Copper River Delta Temperature - RCP 8.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+CR_85Temps
+
+ggsave("Plots/CR_85Temps.jpeg", plot = CR_85Temps, width = 8, height = 6)
+```
+
+### Yakutat Forelands
+
+```{r}
+YF_85Forecast 
+
+YF_85Temps<- ggplot(data = YF_85Forecast, mapping = aes(x = date)) +
+  geom_line(mapping = aes(y = Air_MonthAvg)) +
+  xlab("Year") +
+  ylab("Mean Temperature (C)") +
+  ggtitle("Yakutat Forelands Temperature - RCP 8.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+YF_85Temps
+
+ggsave("Plots/YF_85Temps.jpeg", plot = YF_85Temps, width = 8, height = 6)
+```
