@@ -1,0 +1,1676 @@
+---
+title: "IndividualPondModels_CR"
+author: "Amaryllis Adey"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Goal of this code is to fit a model to the observational data for each of the ponds in the Yakutat Forelands
+
+# Modeling the Observational Data for the Yakutat Forelands Ponds
+
+Looping through each pond individually because the for loop to do this was more complicated than I could figure out in the time before SFS
+
+# Set up the working space for the analysis
+
+## Load in packages
+
+```{r}
+library(rjags)
+library(daymetr)
+library(ecoforecastR)
+library(dplyr)
+library(lubridate)
+library(zoo)
+library(ggplot2)
+```
+
+## Start by loading in the Yakutat Forelands mean data set
+
+```{r}
+CR_Temps <- read.csv("DataFiles/CR_PondAirTemp_mean.csv", header=TRUE)
+
+library(dplyr)
+# remove the first column here and change the column for Date to date
+  # Date is a function of some sort so could be the source of errors
+CR_Temps <- CR_Temps %>%
+  rename(date=Date)
+CR_Temps <- CR_Temps[,-1]
+head(CR_Temps)
+```
+
+## Separate the data into the air temp and the water temp data
+
+```{r}
+CR_AirTemp <- CR_Temps %>%
+  select(date, Airport, Air_MonthAvg, Region)
+
+CR_WaterTemp <- CR_Temps %>%
+  select(date, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD)
+```
+
+## Going to attempt to plot the water temperature and the air temperature over time
+
+```{r}
+head(CR_Temps)
+
+# # plotting this --> shows up as 'blank'
+# ggplot(YF_Temps)+
+#   geom_line(data = YF_Temps, aes(x = date, y = Air_MonthAvg, color = 'red', linetype = "solid"))+
+#   geom_line(data = YF_Temps, aes(x = date, y = UBP4, color = 'blue', linetype = "dashed"))
+
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# Reshape the data from wide to long format
+CR_Temps_long <- CR_Temps %>%
+  pivot_longer(cols = c(Air_MonthAvg, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD),
+               names_to = "variable",
+               values_to = "value")
+
+# Check the structure of the reshaped data
+str(CR_Temps_long)
+
+# Create the plot
+# Create the plot
+CR_PondTemp <- ggplot(CR_Temps_long, aes(x = as.Date(date), y = value, color = variable)) +
+  geom_line(data = filter(CR_Temps_long, variable == "Air_MonthAvg"), color = "black") +  
+  geom_line(data = filter(CR_Temps_long, variable != "Air_MonthAvg")) +  
+  labs(title = "CR Pond Water Temperature Over Time",
+       x = "Date",
+       y = "Value",
+       color = "Variable") +
+  theme_minimal()
+CR_PondTemp
+
+
+# Save the plot
+ggsave("Plots/CR_PondTemp.png", plot = CR_PondTemp, width = 8, height = 6)
+
+```
+
+# Starting the Analysis
+
+## Part 1 - Pulling out the data that we want
+-Linear air-water temperature relationship with only one pond here
+
+# BVS
+
+Here this is set up as just one pond and temperature data
+
+```{r}
+CR_WaterTemp
+
+# Reset row names
+rownames(CR_WaterTemp) <- NULL
+
+# pulling out the dates here
+time <- CR_WaterTemp$date
+length(time)
+
+# Choose one pond to plot through time -- MP1
+y <- CR_WaterTemp$BVS
+length(y)
+
+# Pull out the air temperature from the data
+temp <- CR_AirTemp$Air_MonthAvg
+length(temp)
+```
+
+The code itself has three components, the data model, the process model, and the priors.
+
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+
+### Setting up the random walk --\> added in the air temperature here
+
+Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
+
+```{r}
+RandomWalk_Temp = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+  for(t in 2:n){
+    x[t]~dnorm(k[t],tau_add)
+    k[t] <- beta0[1] + beta0[2] * temp[t]
+  }
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  beta0 ~ dmnorm(betap, sigmap)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
+### Next we need to define the data and priors as a list.
+
+```{r}
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk_Temp),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs", "beta0[1]", "beta0[2]"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(jags.out)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  GraphDataOutputCheck <- merge(ModelOutput, CR_WaterTemp, by = "date", all = T)
+
+# Now you can use this data frame with ggplot2
+BVSModelPlot <- ggplot(GraphDataOutputCheck) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = BVS)) +
+  ggtitle("BVS - Copper River Delta")+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+BVSModelPlot
+
+BVSModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = BVS)) +
+  ggtitle("BVS - Copper River Delta")+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+BVSModelErrorPlot
+
+ggsave("Plots/BVSModelPlot.jpeg", plot = BVSModelPlot, width = 8, height = 6)
+ggsave("Plots/BVSModelErrorPlot.jpeg", plot = BVSModelErrorPlot, width = 8, height = 6)
+```
+
+# CAB
+
+Here this is set up as just one pond and temperature data
+
+```{r}
+CR_WaterTemp
+
+# Reset row names
+rownames(CR_WaterTemp) <- NULL
+
+# pulling out the dates here
+time <- CR_WaterTemp$date
+length(time)
+
+# Choose one pond to plot through time -- MP3
+y <- CR_WaterTemp$CAB
+length(y)
+
+# Pull out the air temperature from the data
+temp <- CR_AirTemp$Air_MonthAvg
+length(temp)
+```
+
+The code itself has three components, the data model, the process model, and the priors.
+
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+
+### Setting up the random walk --\> added in the air temperature here
+
+Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
+
+```{r}
+RandomWalk_Temp = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+  for(t in 2:n){
+    x[t]~dnorm(k[t],tau_add)
+    k[t] <- beta0[1] + beta0[2] * temp[t]
+  }
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  beta0 ~ dmnorm(betap, sigmap)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
+### Next we need to define the data and priors as a list.
+
+```{r}
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk_Temp),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs", "beta0[1]", "beta0[2]"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(jags.out)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  GraphDataOutputCheck <- merge(ModelOutput, CR_WaterTemp, by = "date", all = T)
+
+# Now you can use this data frame with ggplot2
+CABModelPlot <- ggplot(GraphDataOutputCheck) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = CAB)) +
+  ggtitle("CAB - Copper River Delta")+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+CABModelPlot
+
+CABModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = CAB)) +
+  ggtitle("CAB - Copper River Delta")+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+CABModelErrorPlot
+
+ggsave("Plots/CABModelPlot.jpeg", plot = CABModelPlot, width = 8, height = 6)
+ggsave("Plots/CABModelErrorPlot.jpeg", plot = CABModelErrorPlot, width = 8, height = 6)
+```
+
+# CAN
+
+Here this is set up as just one pond and temperature data
+
+```{r}
+CR_WaterTemp
+
+# Reset row names
+rownames(CR_WaterTemp) <- NULL
+
+# pulling out the dates here
+time <- CR_WaterTemp$date
+length(time)
+
+# Choose one pond to plot through time -- MP5
+y <- CR_WaterTemp$CAN
+length(y)
+
+# Pull out the air temperature from the data
+temp <- CR_AirTemp$Air_MonthAvg
+length(temp)
+```
+
+The code itself has three components, the data model, the process model, and the priors.
+
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+
+### Setting up the random walk --\> added in the air temperature here
+
+Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
+
+```{r}
+RandomWalk_Temp = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+  for(t in 2:n){
+    x[t]~dnorm(k[t],tau_add)
+    k[t] <- beta0[1] + beta0[2] * temp[t]
+  }
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  beta0 ~ dmnorm(betap, sigmap)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
+### Next we need to define the data and priors as a list.
+
+```{r}
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk_Temp),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs", "beta0[1]", "beta0[2]"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(jags.out)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  GraphDataOutputCheck <- merge(ModelOutput, CR_WaterTemp, by = "date", all = T)
+
+# Now you can use this data frame with ggplot2
+CANModelPlot <- ggplot(GraphDataOutputCheck) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = CAN)) +
+  ggtitle("CAN - Copper River Delta")+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+CANModelPlot
+
+CANModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = CAN)) +
+  ggtitle("CAN - Copper River Delta")+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+CANModelErrorPlot
+
+ggsave("Plots/CANModelPlot.jpeg", plot = CANModelPlot, width = 8, height = 6)
+ggsave("Plots/CANModelErrorPlot.jpeg", plot = CANModelErrorPlot, width = 8, height = 6)
+```
+
+# EYS
+
+Here this is set up as just one pond and temperature data
+
+```{r}
+CR_WaterTemp
+
+# Reset row names
+rownames(CR_WaterTemp) <- NULL
+
+# pulling out the dates here
+time <- CR_WaterTemp$date
+length(time)
+
+# Choose one pond to plot through time -- MP8
+y <- CR_WaterTemp$EYS
+length(y)
+
+# Pull out the air temperature from the data
+temp <- CR_AirTemp$Air_MonthAvg
+length(temp)
+```
+
+The code itself has three components, the data model, the process model, and the priors.
+
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+
+### Setting up the random walk --\> added in the air temperature here
+
+Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
+
+```{r}
+RandomWalk_Temp = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+  for(t in 2:n){
+    x[t]~dnorm(k[t],tau_add)
+    k[t] <- beta0[1] + beta0[2] * temp[t]
+  }
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  beta0 ~ dmnorm(betap, sigmap)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
+### Next we need to define the data and priors as a list.
+
+```{r}
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk_Temp),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs", "beta0[1]", "beta0[2]"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(jags.out)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  GraphDataOutputCheck <- merge(ModelOutput, CR_WaterTemp, by = "date", all = T)
+
+# Now you can use this data frame with ggplot2
+EYSModelPlot <- ggplot(GraphDataOutputCheck) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = EYS)) +
+  ggtitle("EYS - Copper River Delta")+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+EYSModelPlot
+
+EYSModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = EYS)) +
+  ggtitle("EYS - Copper River Delta")+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+EYSModelErrorPlot
+
+ggsave("Plots/EYSModelPlot.jpeg", plot = EYSModelPlot, width = 8, height = 6)
+ggsave("Plots/EYSModelErrorPlot.jpeg", plot = EYSModelErrorPlot, width = 8, height = 6)
+```
+
+# RHM
+
+Here this is set up as just one pond and temperature data
+
+```{r}
+CR_WaterTemp
+
+# Reset row names
+rownames(CR_WaterTemp) <- NULL
+
+# pulling out the dates here
+time <- CR_WaterTemp$date
+length(time)
+
+# Choose one pond to plot through time -- PL1
+y <- CR_WaterTemp$RHM
+length(y)
+
+# Pull out the air temperature from the data
+temp <- CR_AirTemp$Air_MonthAvg
+length(temp)
+```
+
+The code itself has three components, the data model, the process model, and the priors.
+
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+
+### Setting up the random walk --\> added in the air temperature here
+
+Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
+
+```{r}
+RandomWalk_Temp = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+  for(t in 2:n){
+    x[t]~dnorm(k[t],tau_add)
+    k[t] <- beta0[1] + beta0[2] * temp[t]
+  }
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  beta0 ~ dmnorm(betap, sigmap)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
+### Next we need to define the data and priors as a list.
+
+```{r}
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk_Temp),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs", "beta0[1]", "beta0[2]"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(jags.out)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  GraphDataOutputCheck <- merge(ModelOutput, CR_WaterTemp, by = "date", all = T)
+
+# Now you can use this data frame with ggplot2
+RHMModelPlot <- ggplot(GraphDataOutputCheck) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = RHM)) +
+  ggtitle("RHM - Copper River Delta")+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+RHMModelPlot
+
+RHMModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = RHM)) +
+  ggtitle("RHM - Copper River Delta")+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+RHMModelErrorPlot
+
+ggsave("Plots/RHMModelPlot.jpeg", plot = RHMModelPlot, width = 8, height = 6)
+ggsave("Plots/RHMModelErrorPlot.jpeg", plot = RHMModelErrorPlot, width = 8, height = 6)
+```
+
+# SQR
+
+Here this is set up as just one pond and temperature data
+
+```{r}
+CR_WaterTemp
+
+# Reset row names
+rownames(CR_WaterTemp) <- NULL
+
+# pulling out the dates here
+time <- CR_WaterTemp$date
+length(time)
+
+# Choose one pond to plot through time -- PL2
+y <- CR_WaterTemp$SQR
+length(y)
+
+# Pull out the air temperature from the data
+temp <- CR_AirTemp$Air_MonthAvg
+length(temp)
+```
+
+The code itself has three components, the data model, the process model, and the priors.
+
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+
+### Setting up the random walk --\> added in the air temperature here
+
+Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
+
+```{r}
+RandomWalk_Temp = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+  for(t in 2:n){
+    x[t]~dnorm(k[t],tau_add)
+    k[t] <- beta0[1] + beta0[2] * temp[t]
+  }
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  beta0 ~ dmnorm(betap, sigmap)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
+### Next we need to define the data and priors as a list.
+
+```{r}
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk_Temp),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs", "beta0[1]", "beta0[2]"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(jags.out)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  GraphDataOutputCheck <- merge(ModelOutput, CR_WaterTemp, by = "date", all = T)
+
+# Now you can use this data frame with ggplot2
+SQRModelPlot <- ggplot(GraphDataOutputCheck) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = SQR)) +
+  ggtitle("SQR - Copper River Delta")+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+SQRModelPlot
+
+SQRModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = SQR)) +
+  ggtitle("SQR - Copper River Delta")+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+SQRModelErrorPlot
+
+ggsave("Plots/SQRModelPlot.jpeg", plot = SQRModelPlot, width = 8, height = 6)
+ggsave("Plots/SQRModelErrorPlot.jpeg", plot = SQRModelErrorPlot, width = 8, height = 6)
+```
+
+# TIN
+
+Here this is set up as just one pond and temperature data
+
+```{r}
+CR_WaterTemp
+
+# Reset row names
+rownames(CR_WaterTemp) <- NULL
+
+# pulling out the dates here
+time <- CR_WaterTemp$date
+length(time)
+
+# Choose one pond to plot through time -- PL3
+y <- CR_WaterTemp$TIN
+length(y)
+
+# Pull out the air temperature from the data
+temp <- CR_AirTemp$Air_MonthAvg
+length(temp)
+```
+
+The code itself has three components, the data model, the process model, and the priors.
+
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+
+### Setting up the random walk --\> added in the air temperature here
+
+Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
+
+```{r}
+RandomWalk_Temp = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+  for(t in 2:n){
+    x[t]~dnorm(k[t],tau_add)
+    k[t] <- beta0[1] + beta0[2] * temp[t]
+  }
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  beta0 ~ dmnorm(betap, sigmap)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
+### Next we need to define the data and priors as a list.
+
+```{r}
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk_Temp),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs", "beta0[1]", "beta0[2]"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(jags.out)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  GraphDataOutputCheck <- merge(ModelOutput, CR_WaterTemp, by = "date", all = T)
+
+# Now you can use this data frame with ggplot2
+TINModelPlot <- ggplot(GraphDataOutputCheck) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = TIN)) +
+  ggtitle("TIN - Copper River Delta")+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+TINModelPlot
+
+TINModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = TIN)) +
+  ggtitle("TIN - Copper River Delta")+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+TINModelErrorPlot
+
+ggsave("Plots/TINModelPlot.jpeg", plot = TINModelPlot, width = 8, height = 6)
+ggsave("Plots/TINModelErrorPlot.jpeg", plot = TINModelErrorPlot, width = 8, height = 6)
+```
+
+# TIS
+
+Here this is set up as just one pond and temperature data
+
+```{r}
+CR_WaterTemp
+
+# Reset row names
+rownames(CR_WaterTemp) <- NULL
+
+# pulling out the dates here
+time <- CR_WaterTemp$date
+length(time)
+
+# Choose one pond to plot through time -- UBP1
+y <- CR_WaterTemp$TIS
+length(y)
+
+# Pull out the air temperature from the data
+temp <- CR_AirTemp$Air_MonthAvg
+length(temp)
+```
+
+The code itself has three components, the data model, the process model, and the priors.
+
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+
+### Setting up the random walk --\> added in the air temperature here
+
+Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
+
+```{r}
+RandomWalk_Temp = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+  for(t in 2:n){
+    x[t]~dnorm(k[t],tau_add)
+    k[t] <- beta0[1] + beta0[2] * temp[t]
+  }
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  beta0 ~ dmnorm(betap, sigmap)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
+### Next we need to define the data and priors as a list.
+
+```{r}
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk_Temp),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs", "beta0[1]", "beta0[2]"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(jags.out)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  GraphDataOutputCheck <- merge(ModelOutput, CR_WaterTemp, by = "date", all = T)
+
+# Now you can use this data frame with ggplot2
+TISModelPlot <- ggplot(GraphDataOutputCheck) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = TIS)) +
+  ggtitle("TIS - Yakutat Forelands")+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+TISModelPlot
+
+TISModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = TIS)) +
+  ggtitle("TIS - Copper River Delta")+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+TISModelErrorPlot
+
+ggsave("Plots/TISModelPlot.jpeg", plot = TISModelPlot, width = 8, height = 6)
+ggsave("Plots/TISModelErrorPlot.jpeg", plot = TISModelErrorPlot, width = 8, height = 6)
+```
+
+# WDD
+
+Here this is set up as just one pond and temperature data
+
+```{r}
+CR_WaterTemp
+
+# Reset row names
+rownames(CR_WaterTemp) <- NULL
+
+# pulling out the dates here
+time <- CR_WaterTemp$date
+length(time)
+
+# Choose one pond to plot through time -- UBP2
+y <- CR_WaterTemp$WDD
+length(y)
+
+# Pull out the air temperature from the data
+temp <- CR_AirTemp$Air_MonthAvg
+length(temp)
+```
+
+The code itself has three components, the data model, the process model, and the priors.
+
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+
+### Setting up the random walk --\> added in the air temperature here
+
+Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
+
+```{r}
+RandomWalk_Temp = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+  for(t in 2:n){
+    x[t]~dnorm(k[t],tau_add)
+    k[t] <- beta0[1] + beta0[2] * temp[t]
+  }
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  beta0 ~ dmnorm(betap, sigmap)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
+### Next we need to define the data and priors as a list.
+
+```{r}
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk_Temp),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs", "beta0[1]", "beta0[2]"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(jags.out)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  GraphDataOutputCheck <- merge(ModelOutput, CR_WaterTemp, by = "date", all = T)
+
+# Now you can use this data frame with ggplot2
+WDDModelPlot <- ggplot(GraphDataOutputCheck) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = WDD)) +
+  ggtitle("WDD - Copper River Delta")+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+WDDModelPlot
+
+WDDModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = WDD)) +
+  ggtitle("WDD - Copper River Delta")+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+WDDModelErrorPlot
+
+ggsave("Plots/WDDModelPlot.jpeg", plot = WDDModelPlot, width = 8, height = 6)
+ggsave("Plots/WDDModelErrorPlot.jpeg", plot = WDDModelErrorPlot, width = 8, height = 6)
+```
