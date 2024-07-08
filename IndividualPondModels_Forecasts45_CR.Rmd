@@ -33,7 +33,7 @@ library("hydroGOF")
 ## Start by loading in the Copper River Delta mean data set
 
 ```{r}
-CR_Temps <- read.csv("DataFiles/CopperRiver_CreatedFiles/CR_45SNAPForecast.csv", header=TRUE)
+CR_Temps <- read.csv("DataFiles/CR_45Forecast.csv", header=TRUE)
 
 library(dplyr)
 # remove the first column here and change the column for Date to date
@@ -46,7 +46,7 @@ head(CR_Temps)
 
 ```{r}
 CR_AirTemp <- CR_Temps %>%
-  select(date, Airport, Air_MonthAvg, Air_MonthMax, Air_MonthMin, Region)
+  select(date, Airport, Air_MonthAvg, Region)
 
 CR_WaterTemp <- CR_Temps %>%
   select(date, BVS, CAB, TIN, SQR, CAN, EYS, TIS, WDD, RHM)
@@ -71,7 +71,7 @@ library(tidyr)
 
 # Reshape the data from wide to long format
 CR_Temps_long <- CR_Temps %>%
-  pivot_longer(cols = c(Air_MonthAvg, Air_MonthMax, Air_MonthMin, BVS, CAB, TIN, SQR, CAN, EYS, TIS, WDD, RHM),
+  pivot_longer(cols = c(Air_MonthAvg, BVS, CAB, TIN, SQR, CAN, EYS, TIS, WDD, RHM),
                names_to = "variable",
                values_to = "value")
 
@@ -82,7 +82,7 @@ str(CR_Temps_long)
 # Create the plot
 CR_PondTemp <- ggplot(CR_Temps_long, aes(x = as.Date(date), y = value, color = variable)) +
   geom_line(data = filter(CR_Temps_long, variable == "Air_MonthAvg"), color = "black") +  
-  geom_line(data = filter(CR_Temps_long, variable != "Air_MonthAvg", variable != "Air_MonthMax", variable !="Air_MonthMin")) +  
+  geom_line(data = filter(CR_Temps_long, variable != "Air_MonthAvg")) +  
   labs(title = "CR Pond Water Temperature Over Time",
        x = "Date",
        y = "Value",
@@ -92,35 +92,11 @@ CR_PondTemp
 
 
 # Save the plot
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CR_PondTemp.png", plot = CR_PondTemp, width = 8, height = 6)
+ggsave("Plots/CR_PondTemp.png", plot = CR_PondTemp, width = 8, height = 6)
 
 ```
 
 # Starting the Analysis
-
-## Setting up the temperature data for the random walk models witht he uniform error from min to max temp
-```{r}
-# Getting the max and min temperatures to set up the model for the SNAP data to pull from the uniform distribution from min to max -- goal is to increase the amount of error here
-
-#start by comparing the range of temps for the three decadal periods?
-TempObs <-  CR_AirTemp %>%
-  filter(date < as.Date("2021-01-01"))
-TempObs
-TempPred <- CR_AirTemp %>%
-  filter(date > as.Date("2020-12-01"))
-TempPred
-
-MaxTemp = CR_AirTemp$Air_MonthMax
-
-MinTemp = CR_AirTemp$Air_MonthMin
-
-initialTemp <- CR_AirTemp[1,]
-meanTemp = initialTemp$Air_MonthAvg
-meanTemp
-stdTemp = (initialTemp$Air_MonthMax - initialTemp$Air_MonthMin)/4
-stdTemp
-
-```
 
 ## Part 1 - Pulling out the data that we want
 -Linear air-water temperature relationship with only one pond here
@@ -148,7 +124,6 @@ temp <- CR_AirTemp$Air_MonthAvg
 length(temp)
 ```
 
-
 The code itself has three components, the data model, the process model, and the priors.
 
 Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
@@ -172,14 +147,12 @@ model{
   
   #### Process Model
   for(t in 2:n){
-    x[t] ~ dnorm(k[t],tau_add)
+    x[t]~dnorm(k[t],tau_add)
     k[t] <- beta0[1] + beta0[2] * temp[t]
-    temp[t] ~ dunif(MinTemp[t], MaxTemp[t])
   }
   
   #### Priors
   x[1] ~ dnorm(x_ic,tau_ic)
-  t[1] ~ dnorm(temp_ic, tempT_ic)
   beta0 ~ dmnorm(betap, sigmap)
   tau_obs ~ dgamma(a_obs,r_obs)
   tau_add ~ dgamma(a_add,r_add)
@@ -190,10 +163,10 @@ model{
 ### Next we need to define the data and priors as a list.
 
 ```{r}
-data <- list(y=y,n=length(y), MaxTemp = MaxTemp, MinTemp = MinTemp,   ## data
-             temp_ic = meanTemp, tempT_ic = stdTemp, ## initial temperature
-             x_ic=0,tau_ic=0.2, ## initial condition prior
-             betap=c(1,1), sigmap=diag(0.0001, 2, 2), ## setting up beta
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
              a_obs=1,r_obs=1,           ## obs error prior
              a_add=1,r_add=1            ## process error prior
              )
@@ -278,14 +251,12 @@ BVSModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = BVS)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("BVS - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
- theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
 BVSModelPlot
 
 BVSModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -294,18 +265,16 @@ BVSModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = BVS)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("BVS - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 BVSModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/BVS_45_ModelPlot.jpeg", plot = BVSModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/BVS_45_ModelErrorPlot.jpeg", plot = BVSModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/BVS_45_ModelPlot.jpeg", plot = BVSModelPlot, width = 8, height = 6)
+ggsave("Plots/BVS_45_ModelErrorPlot.jpeg", plot = BVSModelErrorPlot, width = 8, height = 6)
 ```
 
 ## Calculating the NSE (Nash-Sutcliffe efficiency) between our modeled/simulated values and the observations
@@ -319,8 +288,6 @@ BVSMod_total <- BVSMod
 BVSMod <- BVSMod %>%
   filter(date < "2021-01-01")
 range(BVSMod$date)
-mean(BVSMod$`50%`)
-sd(BVSMod$`50%`)
 
 BVSModelErrorPlot <- ggplot(BVSMod, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
@@ -328,17 +295,16 @@ BVSModelErrorPlot <- ggplot(BVSMod, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = BVS)) +
-  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.995")+
+  ggtitle("BVS - Copper River Delta")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.926")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 BVSModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/BVS_ObsModelPlot_45.jpeg", plot = BVSModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/BVS_ObsModelPlot_45.jpeg", plot = BVSModelErrorPlot, width = 8, height = 6)
 
 ```
 
@@ -349,8 +315,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/BVS_ObsModelPlot_45.jpeg", pl
 # filtering for 2030s
 BVS_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
-mean(BVS_2030$`50%`)
-sd(BVS_2030$`50%`)
 
 # Now you can use this data frame with ggplot2
 BVS_2030_ModelPlot <- ggplot(BVS_2030) +
@@ -380,8 +344,8 @@ BVS_2030_ModelErrorPlot <- ggplot(BVS_2030, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 BVS_2030_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/BVS_2030_45_ModelPlot.jpeg", plot = BVS_2030_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/BVS_2030_45_ModelErrorPlot.jpeg", plot = BVS_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/BVS_2030_45_ModelPlot.jpeg", plot = BVS_2030_ModelPlot, width = 8, height = 6)
+ggsave("Plots/BVS_2030_45_ModelErrorPlot.jpeg", plot = BVS_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -389,8 +353,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/BVS_2030_45_ModelErrorPlot.jp
 # filtering for 2030s
 BVS_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
-mean(BVS_2060$`50%`)
-sd(BVS_2060$`50%`)
 
 # Now you can use this data frame with ggplot2
 BVS_2060_ModelPlot <- ggplot(BVS_2060) +
@@ -420,8 +382,8 @@ BVS_2060_ModelErrorPlot <- ggplot(BVS_2060, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 BVS_2060_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/BVS_2060_45_ModelPlot.jpeg", plot = BVS_2060_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/BVS_2060_45_ModelErrorPlot.jpeg", plot = BVS_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/BVS_2060_45_ModelPlot.jpeg", plot = BVS_2060_ModelPlot, width = 8, height = 6)
+ggsave("Plots/BVS_2060_45_ModelErrorPlot.jpeg", plot = BVS_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -429,8 +391,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/BVS_2060_45_ModelErrorPlot.jp
 # filtering for 2030s
 BVS_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
-mean(BVS_2090$`50%`)
-sd(BVS_2090$`50%`)
 
 # Now you can use this data frame with ggplot2
 BVS_2090_ModelPlot <- ggplot(BVS_2090) +
@@ -460,8 +420,8 @@ BVS_2090_ModelErrorPlot <- ggplot(BVS_2090, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 BVS_2090_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/BVS_2090_45_ModelPlot.jpeg", plot = BVS_2090_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/BVS_2090_45_ModelErrorPlot.jpeg", plot = BVS_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/BVS_2090_45_ModelPlot.jpeg", plot = BVS_2090_ModelPlot, width = 8, height = 6)
+ggsave("Plots/BVS_2090_45_ModelErrorPlot.jpeg", plot = BVS_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # CAB
@@ -510,14 +470,12 @@ model{
   
   #### Process Model
   for(t in 2:n){
-    x[t] ~ dnorm(k[t],tau_add)
+    x[t]~dnorm(k[t],tau_add)
     k[t] <- beta0[1] + beta0[2] * temp[t]
-    temp[t] ~ dunif(MinTemp[t], MaxTemp[t])
   }
   
   #### Priors
   x[1] ~ dnorm(x_ic,tau_ic)
-  t[1] ~ dnorm(temp_ic, tempT_ic)
   beta0 ~ dmnorm(betap, sigmap)
   tau_obs ~ dgamma(a_obs,r_obs)
   tau_add ~ dgamma(a_add,r_add)
@@ -528,10 +486,10 @@ model{
 ### Next we need to define the data and priors as a list.
 
 ```{r}
-data <- list(y=y,n=length(y), MaxTemp = MaxTemp, MinTemp = MinTemp,   ## data
-             temp_ic = meanTemp, tempT_ic = stdTemp, ## initial temperature
-             x_ic=0,tau_ic=0.2, ## initial condition prior
-             betap=c(1,1), sigmap=diag(0.0001, 2, 2), ## setting up beta
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
              a_obs=1,r_obs=1,           ## obs error prior
              a_add=1,r_add=1            ## process error prior
              )
@@ -617,14 +575,12 @@ CABModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = CAB)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
-  ylim(c(-10, 30))+
+  ggtitle("CAB - Copper River Delta - RCP 4.5")+
+  ylim(-10,30)+
   ylab("Temeprature (C)") +
-  xlab("Year") +
+  xlab("Date") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 CABModelPlot
 
 CABModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -633,7 +589,7 @@ CABModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = CAB)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("CAB - Copper River Delta - RCP 4.5")+
   ylim(-10,30)+
   ylab("Temeprature (C)") +
   xlab("Date") +
@@ -641,11 +597,9 @@ CABModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 CABModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAB_45_ModelPlot.jpeg", plot = CABModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAB_45_ModelErrorPlot.jpeg", plot = CABModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/CAB_45_ModelPlot.jpeg", plot = CABModelPlot, width = 8, height = 6)
+ggsave("Plots/CAB_45_ModelErrorPlot.jpeg", plot = CABModelErrorPlot, width = 8, height = 6)
 ```
-
-## Getting the NSE Values
 ```{r}
 CABMod <- GraphDataOutputCheck
 NSE(CABMod$`50%`, CABMod$CAB, na.rm = TRUE)
@@ -656,8 +610,6 @@ CABMod_total <- CABMod
 CABMod <- CABMod %>%
   filter(date < "2021-01-01")
 range(CABMod$date)
-mean(CABMod$`50%`)
-sd(CABMod$`50%`)
 
 CABModelErrorPlot <- ggplot(CABMod, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
@@ -665,17 +617,16 @@ CABModelErrorPlot <- ggplot(CABMod, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = CAB)) +
-  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.999")+
+  ggtitle("CAB - Copper River Delta")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.972")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 CABModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAB_ObsModelPlot_45.jpeg", plot = CABModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/CAB_ObsModelPlot_45.jpeg", plot = CABModelErrorPlot, width = 8, height = 6)
 ```
 
 ####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
@@ -685,8 +636,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAB_ObsModelPlot_45.jpeg", pl
 # filtering for 2030s
 CAB_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
-mean(CAB_2030$`50%`)
-sd(CAB_2030$`50%`)
 
 # Now you can use this data frame with ggplot2
 CAB_2030_ModelPlot <- ggplot(CAB_2030) +
@@ -694,14 +643,12 @@ CAB_2030_ModelPlot <- ggplot(CAB_2030) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = CAB)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("CAB - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 CAB_2030_ModelPlot
 
 CAB_2030_ModelErrorPlot <- ggplot(CAB_2030, mapping = aes(date)) +
@@ -710,18 +657,16 @@ CAB_2030_ModelErrorPlot <- ggplot(CAB_2030, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = CAB)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("CAB - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 CAB_2030_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAB_2030_45_ModelPlot.jpeg", plot = CAB_2030_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAB_2030_45_ModelErrorPlot.jpeg", plot = CAB_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/CAB_2030_45_ModelPlot.jpeg", plot = CAB_2030_ModelPlot, width = 8, height = 6)
+ggsave("Plots/CAB_2030_45_ModelErrorPlot.jpeg", plot = CAB_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -729,9 +674,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAB_2030_45_ModelErrorPlot.jp
 # filtering for 2030s
 CAB_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
-mean(CAB_2060$`50%`)
-sd(CAB_2060$`50%`)
-
 
 # Now you can use this data frame with ggplot2
 CAB_2060_ModelPlot <- ggplot(CAB_2060) +
@@ -739,14 +681,12 @@ CAB_2060_ModelPlot <- ggplot(CAB_2060) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = CAB)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("CAB - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 CAB_2060_ModelPlot
 
 CAB_2060_ModelErrorPlot <- ggplot(CAB_2060, mapping = aes(date)) +
@@ -755,18 +695,16 @@ CAB_2060_ModelErrorPlot <- ggplot(CAB_2060, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = CAB)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("CAB - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 CAB_2060_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAB_2060_45_ModelPlot.jpeg", plot = CAB_2060_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAB_2060_45_ModelErrorPlot.jpeg", plot = CAB_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/CAB_2060_45_ModelPlot.jpeg", plot = CAB_2060_ModelPlot, width = 8, height = 6)
+ggsave("Plots/CAB_2060_45_ModelErrorPlot.jpeg", plot = CAB_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -774,8 +712,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAB_2060_45_ModelErrorPlot.jp
 # filtering for 2030s
 CAB_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
-mean(CAB_2090$`50%`)
-sd(CAB_2090$`50%`)
 
 # Now you can use this data frame with ggplot2
 CAB_2090_ModelPlot <- ggplot(CAB_2090) +
@@ -783,14 +719,12 @@ CAB_2090_ModelPlot <- ggplot(CAB_2090) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = CAB)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("CAB - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 CAB_2090_ModelPlot
 
 CAB_2090_ModelErrorPlot <- ggplot(CAB_2090, mapping = aes(date)) +
@@ -799,18 +733,16 @@ CAB_2090_ModelErrorPlot <- ggplot(CAB_2090, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = CAB)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("CAB - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 CAB_2090_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAB_2090_45_ModelPlot.jpeg", plot = CAB_2090_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAB_2090_45_ModelErrorPlot.jpeg", plot = CAB_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/CAB_2090_45_ModelPlot.jpeg", plot = CAB_2090_ModelPlot, width = 8, height = 6)
+ggsave("Plots/CAB_2090_45_ModelErrorPlot.jpeg", plot = CAB_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # CAN
@@ -859,14 +791,12 @@ model{
   
   #### Process Model
   for(t in 2:n){
-    x[t] ~ dnorm(k[t],tau_add)
+    x[t]~dnorm(k[t],tau_add)
     k[t] <- beta0[1] + beta0[2] * temp[t]
-    temp[t] ~ dunif(MinTemp[t], MaxTemp[t])
   }
   
   #### Priors
   x[1] ~ dnorm(x_ic,tau_ic)
-  t[1] ~ dnorm(temp_ic, tempT_ic)
   beta0 ~ dmnorm(betap, sigmap)
   tau_obs ~ dgamma(a_obs,r_obs)
   tau_add ~ dgamma(a_add,r_add)
@@ -877,15 +807,14 @@ model{
 ### Next we need to define the data and priors as a list.
 
 ```{r}
-data <- list(y=y,n=length(y), MaxTemp = MaxTemp, MinTemp = MinTemp,   ## data
-             temp_ic = meanTemp, tempT_ic = stdTemp, ## initial temperature
-             x_ic=0,tau_ic=0.2, ## initial condition prior
-             betap=c(1,1), sigmap=diag(0.0001, 2, 2), ## setting up beta
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
              a_obs=1,r_obs=1,           ## obs error prior
              a_add=1,r_add=1            ## process error prior
              )
 ```
-
 
 ### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
 
@@ -967,14 +896,12 @@ CANModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = CAN)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
-  ylim(c(-10, 30))+
+  ggtitle("CAN - Copper River Delta - RCP 4.5")+
+  ylim(-10,30)+
   ylab("Temeprature (C)") +
-  xlab("Year") +
+  xlab("Date") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 CANModelPlot
 
 CANModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -983,18 +910,16 @@ CANModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = CAN)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
-  ylim(c(-10, 30))+
+  ggtitle("CAN - Copper River Delta - RCP 4.5")+
+  ylim(-10,30)+
   ylab("Temeprature (C)") +
-  xlab("Year") +
+  xlab("Date") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 CANModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAN_45_ModelPlot.jpeg", plot = CANModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAN_45_ModelErrorPlot.jpeg", plot = CANModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/CAN_45_ModelPlot.jpeg", plot = CANModelPlot, width = 8, height = 6)
+ggsave("Plots/CAN_45_ModelErrorPlot.jpeg", plot = CANModelErrorPlot, width = 8, height = 6)
 ```
 ## Getting the NSE Values
 ```{r}
@@ -1007,8 +932,6 @@ CANMod_total <- CANMod
 CANMod <- CANMod %>%
   filter(date < "2021-01-01")
 range(CANMod$date)
-mean(CANMod$`50%`)
-sd(CANMod$`50%`)
 
 CANModelErrorPlot <- ggplot(CANMod, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
@@ -1016,17 +939,16 @@ CANModelErrorPlot <- ggplot(CANMod, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = CAN)) +
-  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.999")+
+  ggtitle("CAN - Copper River Delta")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.983")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 CANModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAN_ObsModelPlot_45.jpeg", plot = CANModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/CAN_ObsModelPlot_45.jpeg", plot = CANModelErrorPlot, width = 8, height = 6)
 
 ```
 ####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
@@ -1036,8 +958,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAN_ObsModelPlot_45.jpeg", pl
 # filtering for 2030s
 CAN_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
-mean(CAN_2030$`50%`)
-sd(CAN_2030$`50%`)
 
 # Now you can use this data frame with ggplot2
 CAN_2030_ModelPlot <- ggplot(CAN_2030) +
@@ -1045,14 +965,12 @@ CAN_2030_ModelPlot <- ggplot(CAN_2030) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = CAN)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("CAN - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 CAN_2030_ModelPlot
 
 CAN_2030_ModelErrorPlot <- ggplot(CAN_2030, mapping = aes(date)) +
@@ -1061,18 +979,16 @@ CAN_2030_ModelErrorPlot <- ggplot(CAN_2030, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = CAN)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("CAN - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 CAN_2030_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAN_2030_45_ModelPlot.jpeg", plot = CAN_2030_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAN_2030_45_ModelErrorPlot.jpeg", plot = CAN_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/CAN_2030_45_ModelPlot.jpeg", plot = CAN_2030_ModelPlot, width = 8, height = 6)
+ggsave("Plots/CAN_2030_45_ModelErrorPlot.jpeg", plot = CAN_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -1080,8 +996,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAN_2030_45_ModelErrorPlot.jp
 # filtering for 2030s
 CAN_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
-mean(CAN_2060$`50%`)
-sd(CAN_2060$`50%`)
 
 # Now you can use this data frame with ggplot2
 CAN_2060_ModelPlot <- ggplot(CAN_2060) +
@@ -1089,14 +1003,12 @@ CAN_2060_ModelPlot <- ggplot(CAN_2060) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = CAN)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("CAN - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 CAN_2060_ModelPlot
 
 CAN_2060_ModelErrorPlot <- ggplot(CAN_2060, mapping = aes(date)) +
@@ -1105,18 +1017,16 @@ CAN_2060_ModelErrorPlot <- ggplot(CAN_2060, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = CAN)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("CAN - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 CAN_2060_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAN_2060_45_ModelPlot.jpeg", plot = CAN_2060_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAN_2060_45_ModelErrorPlot.jpeg", plot = CAN_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/CAN_2060_45_ModelPlot.jpeg", plot = CAN_2060_ModelPlot, width = 8, height = 6)
+ggsave("Plots/CAN_2060_45_ModelErrorPlot.jpeg", plot = CAN_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -1124,8 +1034,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAN_2060_45_ModelErrorPlot.jp
 # filtering for 2030s
 CAN_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
-mean(CAN_2090$`50%`)
-sd(CAN_2090$`50%`)
 
 # Now you can use this data frame with ggplot2
 CAN_2090_ModelPlot <- ggplot(CAN_2090) +
@@ -1133,14 +1041,12 @@ CAN_2090_ModelPlot <- ggplot(CAN_2090) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = CAN)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("CAN - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 CAN_2090_ModelPlot
 
 CAN_2090_ModelErrorPlot <- ggplot(CAN_2090, mapping = aes(date)) +
@@ -1149,18 +1055,16 @@ CAN_2090_ModelErrorPlot <- ggplot(CAN_2090, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = CAN)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("CAN - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 CAN_2090_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAN_2090_45_ModelPlot.jpeg", plot = CAN_2090_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CAN_2090_45_ModelErrorPlot.jpeg", plot = CAN_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/CAN_2090_45_ModelPlot.jpeg", plot = CAN_2090_ModelPlot, width = 8, height = 6)
+ggsave("Plots/CAN_2090_45_ModelErrorPlot.jpeg", plot = CAN_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # EYS
@@ -1209,14 +1113,12 @@ model{
   
   #### Process Model
   for(t in 2:n){
-    x[t] ~ dnorm(k[t],tau_add)
+    x[t]~dnorm(k[t],tau_add)
     k[t] <- beta0[1] + beta0[2] * temp[t]
-    temp[t] ~ dunif(MinTemp[t], MaxTemp[t])
   }
   
   #### Priors
   x[1] ~ dnorm(x_ic,tau_ic)
-  t[1] ~ dnorm(temp_ic, tempT_ic)
   beta0 ~ dmnorm(betap, sigmap)
   tau_obs ~ dgamma(a_obs,r_obs)
   tau_add ~ dgamma(a_add,r_add)
@@ -1227,10 +1129,10 @@ model{
 ### Next we need to define the data and priors as a list.
 
 ```{r}
-data <- list(y=y,n=length(y), MaxTemp = MaxTemp, MinTemp = MinTemp,   ## data
-             temp_ic = meanTemp, tempT_ic = stdTemp, ## initial temperature
-             x_ic=0,tau_ic=0.2, ## initial condition prior
-             betap=c(1,1), sigmap=diag(0.0001, 2, 2), ## setting up beta
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
              a_obs=1,r_obs=1,           ## obs error prior
              a_add=1,r_add=1            ## process error prior
              )
@@ -1316,14 +1218,12 @@ EYSModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = EYS)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
-  ylim(c(-10, 30))+
+  ggtitle("EYS - Copper River Delta - RCP 4.5")+
+  ylim(-10,30)+
   ylab("Temeprature (C)") +
-  xlab("Year") +
+  xlab("Date") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 EYSModelPlot
 
 EYSModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -1332,18 +1232,16 @@ EYSModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = EYS)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
-  ylim(c(-10, 30))+
+  ggtitle("EYS - Copper River Delta - RCP 4.5")+
+  ylim(-10,30)+
   ylab("Temeprature (C)") +
-  xlab("Year") +
+  xlab("Date") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 EYSModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/EYS_45_ModelPlot.jpeg", plot = EYSModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/EYS_45_ModelErrorPlot.jpeg", plot = EYSModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/EYS_45_ModelPlot.jpeg", plot = EYSModelPlot, width = 8, height = 6)
+ggsave("Plots/EYS_45_ModelErrorPlot.jpeg", plot = EYSModelErrorPlot, width = 8, height = 6)
 ```
 
 ## Getting the NSE Values
@@ -1357,8 +1255,6 @@ EYSMod_total <- EYSMod
 EYSMod <- EYSMod %>%
   filter(date < "2021-01-01")
 range(EYSMod$date)
-mean(EYSMod$`50%`)
-sd(EYSMod$`50%`)
 
 EYSModelErrorPlot <- ggplot(EYSMod, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
@@ -1366,17 +1262,16 @@ EYSModelErrorPlot <- ggplot(EYSMod, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = EYS)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("EYS - Copper River Delta - RCP 4.5")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.973")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 EYSModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/EYS_ObsModelPlot_45.jpeg", plot = EYSModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/EYS_ObsModelPlot_45.jpeg", plot = EYSModelErrorPlot, width = 8, height = 6)
 
 ```
 
@@ -1387,9 +1282,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/EYS_ObsModelPlot_45.jpeg", pl
 # filtering for 2030s
 EYS_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
-mean(EYS_2030$`50%`)
-sd(EYS_2030$`50%`)
-
 
 # Now you can use this data frame with ggplot2
 EYS_2030_ModelPlot <- ggplot(EYS_2030) +
@@ -1397,14 +1289,12 @@ EYS_2030_ModelPlot <- ggplot(EYS_2030) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = EYS)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("EYS - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 EYS_2030_ModelPlot
 
 EYS_2030_ModelErrorPlot <- ggplot(EYS_2030, mapping = aes(date)) +
@@ -1413,18 +1303,16 @@ EYS_2030_ModelErrorPlot <- ggplot(EYS_2030, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = EYS)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("EYS - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 EYS_2030_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/EYS_2030_45_ModelPlot.jpeg", plot = EYS_2030_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/EYS_2030_45_ModelErrorPlot.jpeg", plot = EYS_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/EYS_2030_45_ModelPlot.jpeg", plot = EYS_2030_ModelPlot, width = 8, height = 6)
+ggsave("Plots/EYS_2030_45_ModelErrorPlot.jpeg", plot = EYS_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -1432,8 +1320,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/EYS_2030_45_ModelErrorPlot.jp
 # filtering for 2030s
 EYS_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
-mean(EYS_2060$`50%`)
-sd(EYS_2060$`50%`)
 
 # Now you can use this data frame with ggplot2
 EYS_2060_ModelPlot <- ggplot(EYS_2060) +
@@ -1441,14 +1327,12 @@ EYS_2060_ModelPlot <- ggplot(EYS_2060) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = CAN)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("EYS - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 EYS_2060_ModelPlot
 
 EYS_2060_ModelErrorPlot <- ggplot(EYS_2060, mapping = aes(date)) +
@@ -1457,18 +1341,16 @@ EYS_2060_ModelErrorPlot <- ggplot(EYS_2060, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = EYS)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("EYS - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 EYS_2060_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/EYS_2060_45_ModelPlot.jpeg", plot = EYS_2060_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/EYS_2060_45_ModelErrorPlot.jpeg", plot = EYS_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/EYS_2060_45_ModelPlot.jpeg", plot = EYS_2060_ModelPlot, width = 8, height = 6)
+ggsave("Plots/EYS_2060_45_ModelErrorPlot.jpeg", plot = EYS_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -1476,8 +1358,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/EYS_2060_45_ModelErrorPlot.jp
 # filtering for 2030s
 EYS_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
-mean(EYS_2090$`50%`)
-sd(EYS_2090$`50%`)
 
 # Now you can use this data frame with ggplot2
 EYS_2090_ModelPlot <- ggplot(EYS_2090) +
@@ -1485,14 +1365,12 @@ EYS_2090_ModelPlot <- ggplot(EYS_2090) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = EYS)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("EYS - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 EYS_2090_ModelPlot
 
 EYS_2090_ModelErrorPlot <- ggplot(EYS_2090, mapping = aes(date)) +
@@ -1501,18 +1379,16 @@ EYS_2090_ModelErrorPlot <- ggplot(EYS_2090, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = EYS)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("EYS - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 EYS_2090_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/EYS_2090_45_ModelPlot.jpeg", plot = EYS_2090_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/EYS_2090_45_ModelErrorPlot.jpeg", plot = EYS_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/EYS_2090_45_ModelPlot.jpeg", plot = EYS_2090_ModelPlot, width = 8, height = 6)
+ggsave("Plots/EYS_2090_45_ModelErrorPlot.jpeg", plot = EYS_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # RHM
@@ -1561,14 +1437,12 @@ model{
   
   #### Process Model
   for(t in 2:n){
-    x[t] ~ dnorm(k[t],tau_add)
+    x[t]~dnorm(k[t],tau_add)
     k[t] <- beta0[1] + beta0[2] * temp[t]
-    temp[t] ~ dunif(MinTemp[t], MaxTemp[t])
   }
   
   #### Priors
   x[1] ~ dnorm(x_ic,tau_ic)
-  t[1] ~ dnorm(temp_ic, tempT_ic)
   beta0 ~ dmnorm(betap, sigmap)
   tau_obs ~ dgamma(a_obs,r_obs)
   tau_add ~ dgamma(a_add,r_add)
@@ -1579,15 +1453,14 @@ model{
 ### Next we need to define the data and priors as a list.
 
 ```{r}
-data <- list(y=y,n=length(y), MaxTemp = MaxTemp, MinTemp = MinTemp,   ## data
-             temp_ic = meanTemp, tempT_ic = stdTemp, ## initial temperature
-             x_ic=0,tau_ic=0.2, ## initial condition prior
-             betap=c(1,1), sigmap=diag(0.0001, 2, 2), ## setting up beta
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
              a_obs=1,r_obs=1,           ## obs error prior
              a_add=1,r_add=1            ## process error prior
              )
 ```
-
 
 ### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
 
@@ -1669,14 +1542,12 @@ RHM_45_ModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = RHM)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
-  ylim(c(-10, 30))+
+  ggtitle("RHM - Copper River Delta - RCP 4.5")+
+  ylim(-10, 30)+
   ylab("Temeprature (C)") +
-  xlab("Year") +
+  xlab("Date") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 RHM_45_ModelPlot
 
 RHM_45_ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -1685,18 +1556,17 @@ RHM_45_ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = RHM)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
-  ylim(c(-10, 30))+
+  
+  ggtitle("RHM - Copper River Delta - RCP 4.5")+
+  ylim(-10,30) +
   ylab("Temeprature (C)") +
-  xlab("Year") +
+  xlab("Date") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 RHM_45_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/RHM_45_ModelPlot.jpeg", plot = RHM_45_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/RHM_45_ModelErrorPlot.jpeg", plot = RHM_45_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/RHM_45_ModelPlot.jpeg", plot = RHM_45_ModelPlot, width = 8, height = 6)
+ggsave("Plots/RHM_45_ModelErrorPlot.jpeg", plot = RHM_45_ModelErrorPlot, width = 8, height = 6)
 ```
 ## Getting the NSE Values
 ```{r}
@@ -1709,8 +1579,6 @@ RHMMod_total <- RHMMod
 RHMMod <- RHMMod %>%
   filter(date < "2021-01-01")
 range(RHMMod$date)
-mean(RHMMod$`50%`)
-sd(RHMMod$`50%`)
 
 RHMModelErrorPlot <- ggplot(RHMMod, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
@@ -1718,17 +1586,16 @@ RHMModelErrorPlot <- ggplot(RHMMod, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = RHM)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("RHM - Copper River Delta")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.966")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 RHMModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/RHM_ObsModelPlot_45.jpeg", plot = RHMModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/RHM_ObsModelPlot_45.jpeg", plot = RHMModelErrorPlot, width = 8, height = 6)
 
 ```
 ####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
@@ -1738,8 +1605,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/RHM_ObsModelPlot_45.jpeg", pl
 # filtering for 2030s
 RHM_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
-mean(RHM_2030$`50%`)
-sd(RHM_2030$`50%`)
 
 # Now you can use this data frame with ggplot2
 RHM_2030_ModelPlot <- ggplot(RHM_2030) +
@@ -1747,14 +1612,12 @@ RHM_2030_ModelPlot <- ggplot(RHM_2030) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = RHM)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("RHM - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 RHM_2030_ModelPlot
 
 RHM_2030_ModelErrorPlot <- ggplot(RHM_2030, mapping = aes(date)) +
@@ -1763,18 +1626,17 @@ RHM_2030_ModelErrorPlot <- ggplot(RHM_2030, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = RHM)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  geom_hline(yintercept = 7.652023, linetype = "dashed", color = "red", size = 1.5) +  # Add horizontal line for the SFS presentation
+  ggtitle("RHM - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 RHM_2030_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/RHM_2030_45_ModelPlot.jpeg", plot = RHM_2030_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/RHM_2030_45_ModelErrorPlot.jpeg", plot = RHM_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/RHM_2030_45_ModelPlot.jpeg", plot = RHM_2030_ModelPlot, width = 8, height = 6)
+ggsave("Plots/RHM_2030_45_ModelErrorPlot.jpeg", plot = RHM_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -1782,8 +1644,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/RHM_2030_45_ModelErrorPlot.jp
 # filtering for 2030s
 RHM_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
-mean(RHM_2060$`50%`)
-sd(RHM_2060$`50%`)
 
 # Now you can use this data frame with ggplot2
 RHM_2060_ModelPlot <- ggplot(RHM_2060) +
@@ -1791,14 +1651,12 @@ RHM_2060_ModelPlot <- ggplot(RHM_2060) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = RHM)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("RHM - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 RHM_2060_ModelPlot
 
 RHM_2060_ModelErrorPlot <- ggplot(RHM_2060, mapping = aes(date)) +
@@ -1807,18 +1665,17 @@ RHM_2060_ModelErrorPlot <- ggplot(RHM_2060, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = RHM)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  geom_hline(yintercept = 8.345756, linetype = "dashed", color = "red", size = 1.5) +  # Add horizontal line for the SFS presentation
+  ggtitle("RHM - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 RHM_2060_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/RHM_2060_45_ModelPlot.jpeg", plot = RHM_2060_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/RHM_2060_45_ModelErrorPlot.jpeg", plot = RHM_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/RHM_2060_45_ModelPlot.jpeg", plot = RHM_2060_ModelPlot, width = 8, height = 6)
+ggsave("Plots/RHM_2060_45_ModelErrorPlot.jpeg", plot = RHM_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -1826,8 +1683,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/RHM_2060_45_ModelErrorPlot.jp
 # filtering for 2030s
 RHM_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
-mean(RHM_2090$`50%`)
-sd(RHM_2090$`50%`)
 
 # Now you can use this data frame with ggplot2
 RHM_2090_ModelPlot <- ggplot(RHM_2090) +
@@ -1835,14 +1690,12 @@ RHM_2090_ModelPlot <- ggplot(RHM_2090) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = RHM)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("RHM - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 RHM_2090_ModelPlot
 
 RHM_2090_ModelErrorPlot <- ggplot(RHM_2090, mapping = aes(date)) +
@@ -1851,18 +1704,17 @@ RHM_2090_ModelErrorPlot <- ggplot(RHM_2090, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = RHM)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  geom_hline(yintercept = 8.815792, linetype = "dashed", color = "red", size = 1.5) +  # Add horizontal line for the SFS presentation
+  ggtitle("RHM - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 RHM_2090_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/RHM_2090_45_ModelPlot.jpeg", plot = RHM_2090_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/RHM_2090_45_ModelErrorPlot.jpeg", plot = RHM_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/RHM_2090_45_ModelPlot.jpeg", plot = RHM_2090_ModelPlot, width = 8, height = 6)
+ggsave("Plots/RHM_2090_45_ModelErrorPlot.jpeg", plot = RHM_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # SQR
@@ -1911,14 +1763,12 @@ model{
   
   #### Process Model
   for(t in 2:n){
-    x[t] ~ dnorm(k[t],tau_add)
+    x[t]~dnorm(k[t],tau_add)
     k[t] <- beta0[1] + beta0[2] * temp[t]
-    temp[t] ~ dunif(MinTemp[t], MaxTemp[t])
   }
   
   #### Priors
   x[1] ~ dnorm(x_ic,tau_ic)
-  t[1] ~ dnorm(temp_ic, tempT_ic)
   beta0 ~ dmnorm(betap, sigmap)
   tau_obs ~ dgamma(a_obs,r_obs)
   tau_add ~ dgamma(a_add,r_add)
@@ -1929,10 +1779,10 @@ model{
 ### Next we need to define the data and priors as a list.
 
 ```{r}
-data <- list(y=y,n=length(y), MaxTemp = MaxTemp, MinTemp = MinTemp,   ## data
-             temp_ic = meanTemp, tempT_ic = stdTemp, ## initial temperature
-             x_ic=0,tau_ic=0.2, ## initial condition prior
-             betap=c(1,1), sigmap=diag(0.0001, 2, 2), ## setting up beta
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
              a_obs=1,r_obs=1,           ## obs error prior
              a_add=1,r_add=1            ## process error prior
              )
@@ -2018,14 +1868,12 @@ SQR_45_ModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = SQR)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
-  ylim(c(-10, 30))+
+  ggtitle("SQR - Copper River Delta - RCP 4.5")+
+  ylim(-10, 30) +
   ylab("Temeprature (C)") +
-  xlab("Year") +
+  xlab("Date") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 SQR_45_ModelPlot
 
 SQR_45_ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -2034,18 +1882,16 @@ SQR_45_ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = SQR)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
-  ylim(c(-10, 30))+
+  ggtitle("SQR - Copper River Delta - RCP 4.5")+
+  ylim(-10,30) +
   ylab("Temeprature (C)") +
-  xlab("Year") +
+  xlab("Date") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 SQR_45_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/SQR_45_ModelPlot.jpeg", plot = SQR_45_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/SQR_45_ModelErrorPlot.jpeg", plot = SQR_45_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/SQR_45_ModelPlot.jpeg", plot = SQR_45_ModelPlot, width = 8, height = 6)
+ggsave("Plots/SQR_45_ModelErrorPlot.jpeg", plot = SQR_45_ModelErrorPlot, width = 8, height = 6)
 ```
 
 ## Getting the NSE Values
@@ -2059,8 +1905,6 @@ SQRMod_total <- SQRMod
 SQRMod <- SQRMod %>%
   filter(date < "2021-01-01")
 range(SQRMod$date)
-mean(SQRMod$`50%`)
-sd(SQRMod$`50%`)
 
 SQRModelErrorPlot <- ggplot(SQRMod, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
@@ -2068,17 +1912,16 @@ SQRModelErrorPlot <- ggplot(SQRMod, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = SQR)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("SQR - Copper River Delta")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.971")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 SQRModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/SQR_ObsModelPlot_45.jpeg", plot = SQRModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/SQR_ObsModelPlot_45.jpeg", plot = SQRModelErrorPlot, width = 8, height = 6)
 
 ```
 
@@ -2089,8 +1932,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/SQR_ObsModelPlot_45.jpeg", pl
 # filtering for 2030s
 SQR_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
-mean(SQR_2030$`50%`)
-sd(SQR_2030$`50%`)
 
 # Now you can use this data frame with ggplot2
 SQR_2030_ModelPlot <- ggplot(SQR_2030) +
@@ -2098,14 +1939,12 @@ SQR_2030_ModelPlot <- ggplot(SQR_2030) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = SQR)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("SQR - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 SQR_2030_ModelPlot
 
 SQR_2030_ModelErrorPlot <- ggplot(SQR_2030, mapping = aes(date)) +
@@ -2114,18 +1953,16 @@ SQR_2030_ModelErrorPlot <- ggplot(SQR_2030, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = SQR)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("SQR - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 SQR_2030_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/SQR_2030_45_ModelPlot.jpeg", plot = SQR_2030_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/SQR_2030_45_ModelErrorPlot.jpeg", plot = SQR_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/SQR_2030_45_ModelPlot.jpeg", plot = SQR_2030_ModelPlot, width = 8, height = 6)
+ggsave("Plots/SQR_2030_45_ModelErrorPlot.jpeg", plot = SQR_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -2133,8 +1970,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/SQR_2030_45_ModelErrorPlot.jp
 # filtering for 2030s
 SQR_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
-mean(SQR_2060$`50%`)
-sd(SQR_2060$`50%`)
 
 # Now you can use this data frame with ggplot2
 SQR_2060_ModelPlot <- ggplot(SQR_2060) +
@@ -2142,14 +1977,12 @@ SQR_2060_ModelPlot <- ggplot(SQR_2060) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = SQR)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("SQR - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 SQR_2060_ModelPlot
 
 SQR_2060_ModelErrorPlot <- ggplot(SQR_2060, mapping = aes(date)) +
@@ -2158,18 +1991,16 @@ SQR_2060_ModelErrorPlot <- ggplot(SQR_2060, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = SQR)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("SQR - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 SQR_2060_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/SQR_2060_45_ModelPlot.jpeg", plot = SQR_2060_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/SQR_2060_45_ModelErrorPlot.jpeg", plot = SQR_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/SQR_2060_45_ModelPlot.jpeg", plot = SQR_2060_ModelPlot, width = 8, height = 6)
+ggsave("Plots/SQR_2060_45_ModelErrorPlot.jpeg", plot = SQR_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -2177,8 +2008,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/SQR_2060_45_ModelErrorPlot.jp
 # filtering for 2030s
 SQR_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
-mean(SQR_2090$`50%`)
-sd(SQR_2090$`50%`)
 
 # Now you can use this data frame with ggplot2
 SQR_2090_ModelPlot <- ggplot(SQR_2090) +
@@ -2186,14 +2015,12 @@ SQR_2090_ModelPlot <- ggplot(SQR_2090) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = SQR)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("SQR - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 SQR_2090_ModelPlot
 
 SQR_2090_ModelErrorPlot <- ggplot(SQR_2090, mapping = aes(date)) +
@@ -2202,18 +2029,16 @@ SQR_2090_ModelErrorPlot <- ggplot(SQR_2090, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = SQR)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("SQR - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 SQR_2090_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/SQR_2090_45_ModelPlot.jpeg", plot = SQR_2090_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/SQR_2090_45_ModelErrorPlot.jpeg", plot = SQR_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/SQR_2090_45_ModelPlot.jpeg", plot = SQR_2090_ModelPlot, width = 8, height = 6)
+ggsave("Plots/SQR_2090_45_ModelErrorPlot.jpeg", plot = SQR_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # TIN
@@ -2251,7 +2076,7 @@ Priors - Finally, for the priors we need to define **priors** for the initial co
 
 Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
 
-````{r}
+```{r}
 RandomWalk_Temp = "
 model{
   
@@ -2262,14 +2087,12 @@ model{
   
   #### Process Model
   for(t in 2:n){
-    x[t] ~ dnorm(k[t],tau_add)
+    x[t]~dnorm(k[t],tau_add)
     k[t] <- beta0[1] + beta0[2] * temp[t]
-    temp[t] ~ dunif(MinTemp[t], MaxTemp[t])
   }
   
   #### Priors
   x[1] ~ dnorm(x_ic,tau_ic)
-  t[1] ~ dnorm(temp_ic, tempT_ic)
   beta0 ~ dmnorm(betap, sigmap)
   tau_obs ~ dgamma(a_obs,r_obs)
   tau_add ~ dgamma(a_add,r_add)
@@ -2280,15 +2103,14 @@ model{
 ### Next we need to define the data and priors as a list.
 
 ```{r}
-data <- list(y=y,n=length(y), MaxTemp = MaxTemp, MinTemp = MinTemp,   ## data
-             temp_ic = meanTemp, tempT_ic = stdTemp, ## initial temperature
-             x_ic=0,tau_ic=0.2, ## initial condition prior
-             betap=c(1,1), sigmap=diag(0.0001, 2, 2), ## setting up beta
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
              a_obs=1,r_obs=1,           ## obs error prior
              a_add=1,r_add=1            ## process error prior
              )
 ```
-
 
 ### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
 
@@ -2370,14 +2192,12 @@ TIN_45_ModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = TIN)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
-  ylim(c(-10, 30))+
+  ggtitle("TIN - Copper River Delta - RCP 4.5")+
+  ylim(-10,30) +
   ylab("Temeprature (C)") +
-  xlab("Year") +
+  xlab("Date") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 TIN_45_ModelPlot
 
 TIN_45_ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -2386,18 +2206,16 @@ TIN_45_ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = TIN)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
-  ylim(c(-10, 30))+
+  ggtitle("TIN - Copper River Delta - RCP 4.5")+
+  ylim(-10,30) +
   ylab("Temeprature (C)") +
-  xlab("Year") +
+  xlab("Date") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 TIN_45_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/TIN_45_ModelPlot.jpeg", plot = TIN_45_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/TIN_45_ModelErrorPlot.jpeg", plot = TIN_45_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/TIN_45_ModelPlot.jpeg", plot = TIN_45_ModelPlot, width = 8, height = 6)
+ggsave("Plots/TIN_45_ModelErrorPlot.jpeg", plot = TIN_45_ModelErrorPlot, width = 8, height = 6)
 ```
 
 ## Getting the NSE Values
@@ -2411,8 +2229,6 @@ TINMod_total <- TINMod
 TINMod <- TINMod %>%
   filter(date < "2021-01-01")
 range(TINMod$date)
-mean(TINMod$`50%`)
-sd(TINMod$`50%`)
 
 TINModelErrorPlot <- ggplot(TINMod, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
@@ -2420,17 +2236,16 @@ TINModelErrorPlot <- ggplot(TINMod, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = TIN)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("TIN - Copper River Delta")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.971")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 TINModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/TIN_ObsModelPlot_45.jpeg", plot = TINModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/TIN_ObsModelPlot_45.jpeg", plot = TINModelErrorPlot, width = 8, height = 6)
 
 ```
 
@@ -2441,8 +2256,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/TIN_ObsModelPlot_45.jpeg", pl
 # filtering for 2030s
 TIN_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
-mean(TIN_2030$`50%`)
-sd(TIN_2030$`50%`)
 
 # Now you can use this data frame with ggplot2
 TIN_2030_ModelPlot <- ggplot(TIN_2030) +
@@ -2450,14 +2263,12 @@ TIN_2030_ModelPlot <- ggplot(TIN_2030) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = TIN)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("TIN - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 TIN_2030_ModelPlot
 
 TIN_2030_ModelErrorPlot <- ggplot(TIN_2030, mapping = aes(date)) +
@@ -2466,18 +2277,16 @@ TIN_2030_ModelErrorPlot <- ggplot(TIN_2030, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = TIN)) +
- geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("TIN - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 TIN_2030_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/TIN_2030_45_ModelPlot.jpeg", plot = TIN_2030_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/TIN_2030_45_ModelErrorPlot.jpeg", plot = TIN_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/TIN_2030_45_ModelPlot.jpeg", plot = TIN_2030_ModelPlot, width = 8, height = 6)
+ggsave("Plots/TIN_2030_45_ModelErrorPlot.jpeg", plot = TIN_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -2485,9 +2294,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/TIN_2030_45_ModelErrorPlot.jp
 # filtering for 2030s
 TIN_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
-mean(TIN_2060$`50%`)
-sd(TIN_2060$`50%`)
-
 
 # Now you can use this data frame with ggplot2
 TIN_2060_ModelPlot <- ggplot(TIN_2060) +
@@ -2495,14 +2301,12 @@ TIN_2060_ModelPlot <- ggplot(TIN_2060) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = TIN)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("TIN - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 TIN_2060_ModelPlot
 
 TIN_2060_ModelErrorPlot <- ggplot(TIN_2060, mapping = aes(date)) +
@@ -2511,18 +2315,16 @@ TIN_2060_ModelErrorPlot <- ggplot(TIN_2060, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = TIN)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("TIN - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 TIN_2060_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/TIN_2060_45_ModelPlot.jpeg", plot = TIN_2060_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/TIN_2060_45_ModelErrorPlot.jpeg", plot = TIN_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/TIN_2060_45_ModelPlot.jpeg", plot = TIN_2060_ModelPlot, width = 8, height = 6)
+ggsave("Plots/TIN_2060_45_ModelErrorPlot.jpeg", plot = TIN_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -2530,8 +2332,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/TIN_2060_45_ModelErrorPlot.jp
 # filtering for 2030s
 TIN_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
-mean(TIN_2090$`50%`)
-sd(TIN_2090$`50%`)
 
 # Now you can use this data frame with ggplot2
 TIN_2090_ModelPlot <- ggplot(TIN_2090) +
@@ -2539,14 +2339,12 @@ TIN_2090_ModelPlot <- ggplot(TIN_2090) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = TIN)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("TIN - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 TIN_2090_ModelPlot
 
 TIN_2090_ModelErrorPlot <- ggplot(TIN_2090, mapping = aes(date)) +
@@ -2555,18 +2353,16 @@ TIN_2090_ModelErrorPlot <- ggplot(TIN_2090, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = TIN)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("TIN - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 TIN_2090_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/TIN_2090_45_ModelPlot.jpeg", plot = TIN_2090_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/TIN_2090_45_ModelErrorPlot.jpeg", plot = TIN_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/TIN_2090_45_ModelPlot.jpeg", plot = TIN_2090_ModelPlot, width = 8, height = 6)
+ggsave("Plots/TIN_2090_45_ModelErrorPlot.jpeg", plot = TIN_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # TIS
@@ -2615,14 +2411,12 @@ model{
   
   #### Process Model
   for(t in 2:n){
-    x[t] ~ dnorm(k[t],tau_add)
+    x[t]~dnorm(k[t],tau_add)
     k[t] <- beta0[1] + beta0[2] * temp[t]
-    temp[t] ~ dunif(MinTemp[t], MaxTemp[t])
   }
   
   #### Priors
   x[1] ~ dnorm(x_ic,tau_ic)
-  t[1] ~ dnorm(temp_ic, tempT_ic)
   beta0 ~ dmnorm(betap, sigmap)
   tau_obs ~ dgamma(a_obs,r_obs)
   tau_add ~ dgamma(a_add,r_add)
@@ -2633,15 +2427,14 @@ model{
 ### Next we need to define the data and priors as a list.
 
 ```{r}
-data <- list(y=y,n=length(y), MaxTemp = MaxTemp, MinTemp = MinTemp,   ## data
-             temp_ic = meanTemp, tempT_ic = stdTemp, ## initial temperature
-             x_ic=0,tau_ic=0.2, ## initial condition prior
-             betap=c(1,1), sigmap=diag(0.0001, 2, 2), ## setting up beta
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
              a_obs=1,r_obs=1,           ## obs error prior
              a_add=1,r_add=1            ## process error prior
              )
 ```
-
 
 ### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
 
@@ -2723,14 +2516,12 @@ TISModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = TIS)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
-  ylim(c(-10, 30))+
+  ggtitle("TIS - Copper River Delta - RCP 4.5")+
+  ylim(-10,30) +
   ylab("Temeprature (C)") +
-  xlab("Year") +
+  xlab("Date") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 TISModelPlot
 
 TISModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -2739,18 +2530,16 @@ TISModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = TIS)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
-  ylim(c(-10, 30))+
+  ggtitle("TIS- Copper River Delta - RCP 4.5")+
+  ylim(-10,30) +
   ylab("Temeprature (C)") +
-  xlab("Year") +
+  xlab("Date") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 TISModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/TIS_45_ModelPlot.jpeg", plot = TISModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/TIS_45_ModelErrorPlot.jpeg", plot = TISModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/TIS_45_ModelPlot.jpeg", plot = TISModelPlot, width = 8, height = 6)
+ggsave("Plots/TIS_45_ModelErrorPlot.jpeg", plot = TISModelErrorPlot, width = 8, height = 6)
 ```
 
 ## Getting the NSE Values
@@ -2764,9 +2553,6 @@ TISMod_total <- TISMod
 TISMod <- TISMod %>%
   filter(date < "2021-01-01")
 range(TISMod$date)
-mean(TISMod$`50%`)
-sd(TISMod$`50%`)
-
 
 TISModelErrorPlot <- ggplot(TISMod, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
@@ -2774,17 +2560,16 @@ TISModelErrorPlot <- ggplot(TISMod, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = TIS)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("TIS - Copper River Delta")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.945")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 TISModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/TIS_ObsModelPlot_45.jpeg", plot = TISModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/TIS_ObsModelPlot_45.jpeg", plot = TISModelErrorPlot, width = 8, height = 6)
 
 ```
 
@@ -2795,8 +2580,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/TIS_ObsModelPlot_45.jpeg", pl
 # filtering for 2030s
 TIS_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
-mean(TIS_2030$`50%`)
-sd(TIS_2030$`50%`)
 
 # Now you can use this data frame with ggplot2
 TIS_2030_ModelPlot <- ggplot(TIS_2030) +
@@ -2804,14 +2587,12 @@ TIS_2030_ModelPlot <- ggplot(TIS_2030) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = TIS)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("TIS - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 TIS_2030_ModelPlot
 
 TIS_2030_ModelErrorPlot <- ggplot(TIS_2030, mapping = aes(date)) +
@@ -2820,18 +2601,16 @@ TIS_2030_ModelErrorPlot <- ggplot(TIS_2030, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = TIS)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("TIS - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 TIS_2030_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/TIS_2030_45_ModelPlot.jpeg", plot = TIS_2030_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/TIS_2030_45_ModelErrorPlot.jpeg", plot = TIS_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/TIS_2030_45_ModelPlot.jpeg", plot = TIS_2030_ModelPlot, width = 8, height = 6)
+ggsave("Plots/TIS_2030_45_ModelErrorPlot.jpeg", plot = TIS_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -2839,8 +2618,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/TIS_2030_45_ModelErrorPlot.jp
 # filtering for 2030s
 TIS_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
-mean(TIS_2060$`50%`)
-sd(TIS_2060$`50%`)
 
 # Now you can use this data frame with ggplot2
 TIS_2060_ModelPlot <- ggplot(TIS_2060) +
@@ -2848,14 +2625,12 @@ TIS_2060_ModelPlot <- ggplot(TIS_2060) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = TIS)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("TIS - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 TIS_2060_ModelPlot
 
 TIS_2060_ModelErrorPlot <- ggplot(TIS_2060, mapping = aes(date)) +
@@ -2864,18 +2639,16 @@ TIS_2060_ModelErrorPlot <- ggplot(TIS_2060, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = TIS)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("TIS - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 TIS_2060_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/TIS_2060_45_ModelPlot.jpeg", plot = TIS_2060_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/IS_2060_45_ModelErrorPlot.jpeg", plot = TIS_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/TIS_2060_45_ModelPlot.jpeg", plot = TIS_2060_ModelPlot, width = 8, height = 6)
+ggsave("Plots/TIS_2060_45_ModelErrorPlot.jpeg", plot = TIS_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -2883,8 +2656,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/IS_2060_45_ModelErrorPlot.jpe
 # filtering for 2030s
 TIS_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
-mean(TIS_2090$`50%`)
-sd(TIS_2090$`50%`)
 
 # Now you can use this data frame with ggplot2
 TIS_2090_ModelPlot <- ggplot(TIS_2090) +
@@ -2892,14 +2663,12 @@ TIS_2090_ModelPlot <- ggplot(TIS_2090) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = TIS)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("TIS - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 TIS_2090_ModelPlot
 
 TIS_2090_ModelErrorPlot <- ggplot(TIS_2090, mapping = aes(date)) +
@@ -2908,18 +2677,16 @@ TIS_2090_ModelErrorPlot <- ggplot(TIS_2090, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = TIS)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("TIS - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 TIS_2090_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/TIS_2090_45_ModelPlot.jpeg", plot = TIS_2090_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/TIS_2090_45_ModelErrorPlot.jpeg", plot = TIS_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/TIS_2090_45_ModelPlot.jpeg", plot = TIS_2090_ModelPlot, width = 8, height = 6)
+ggsave("Plots/TIS_2090_45_ModelErrorPlot.jpeg", plot = TIS_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # WDD
@@ -2968,14 +2735,12 @@ model{
   
   #### Process Model
   for(t in 2:n){
-    x[t] ~ dnorm(k[t],tau_add)
+    x[t]~dnorm(k[t],tau_add)
     k[t] <- beta0[1] + beta0[2] * temp[t]
-    temp[t] ~ dunif(MinTemp[t], MaxTemp[t])
   }
   
   #### Priors
   x[1] ~ dnorm(x_ic,tau_ic)
-  t[1] ~ dnorm(temp_ic, tempT_ic)
   beta0 ~ dmnorm(betap, sigmap)
   tau_obs ~ dgamma(a_obs,r_obs)
   tau_add ~ dgamma(a_add,r_add)
@@ -2986,15 +2751,14 @@ model{
 ### Next we need to define the data and priors as a list.
 
 ```{r}
-data <- list(y=y,n=length(y), MaxTemp = MaxTemp, MinTemp = MinTemp,   ## data
-             temp_ic = meanTemp, tempT_ic = stdTemp, ## initial temperature
-             x_ic=0,tau_ic=0.2, ## initial condition prior
-             betap=c(1,1), sigmap=diag(0.0001, 2, 2), ## setting up beta
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
              a_obs=1,r_obs=1,           ## obs error prior
              a_add=1,r_add=1            ## process error prior
              )
 ```
-
 
 ### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
 
@@ -3076,14 +2840,12 @@ WDDModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = WDD)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
-  ylim(c(-10, 30))+
+  ggtitle("WDD - Copper River Delta - RCP 4.5")+
+  ylim(-10,30) +
   ylab("Temeprature (C)") +
-  xlab("Year") +
+  xlab("Date") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 WDDModelPlot
 
 WDDModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -3092,18 +2854,16 @@ WDDModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = WDD)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
-  ylim(c(-10, 30))+
+  ggtitle("WDD- Copper River Delta - RCP 4.5")+
+  ylim(-10,30) +
   ylab("Temeprature (C)") +
-  xlab("Year") +
+  xlab("Date") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 WDDModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/WDD_45_ModelPlot.jpeg", plot = WDDModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/WDD_45_ModelErrorPlot.jpeg", plot = WDDModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/WDD_45_ModelPlot.jpeg", plot = WDDModelPlot, width = 8, height = 6)
+ggsave("Plots/WDD_45_ModelErrorPlot.jpeg", plot = WDDModelErrorPlot, width = 8, height = 6)
 ```
 
 
@@ -3118,8 +2878,6 @@ WDDMod_total <- WDDMod
 WDDMod <- WDDMod %>%
   filter(date < "2021-01-01")
 range(WDDMod$date)
-mean(WDDMod$`50%`)
-sd(WDDMod$`50%`)
 
 WDDModelErrorPlot <- ggplot(WDDMod, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
@@ -3127,17 +2885,16 @@ WDDModelErrorPlot <- ggplot(WDDMod, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = WDD)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("WDD - Copper River Delta")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.917")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 WDDModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/WDD_ObsModelPlot_45.jpeg", plot = WDDModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/WDD_ObsModelPlot_45.jpeg", plot = WDDModelErrorPlot, width = 8, height = 6)
 
 ```
 ####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
@@ -3147,8 +2904,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/WDD_ObsModelPlot_45.jpeg", pl
 # filtering for 2030s
 WDD_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
-mean(WDD_2030$`50%`)
-sd(WDD_2030$`50%`)
 
 # Now you can use this data frame with ggplot2
 WDD_2030_ModelPlot <- ggplot(WDD_2030) +
@@ -3156,14 +2911,12 @@ WDD_2030_ModelPlot <- ggplot(WDD_2030) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = WDD)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("WDD - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 WDD_2030_ModelPlot
 
 WDD_2030_ModelErrorPlot <- ggplot(WDD_2030, mapping = aes(date)) +
@@ -3172,18 +2925,16 @@ WDD_2030_ModelErrorPlot <- ggplot(WDD_2030, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = WDD)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("WDD - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 WDD_2030_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/WDD_2030_45_ModelPlot.jpeg", plot = WDD_2030_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/WDD_2030_45_ModelErrorPlot.jpeg", plot = WDD_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/WDD_2030_45_ModelPlot.jpeg", plot = WDD_2030_ModelPlot, width = 8, height = 6)
+ggsave("Plots/WDD_2030_45_ModelErrorPlot.jpeg", plot = WDD_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -3191,8 +2942,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/WDD_2030_45_ModelErrorPlot.jp
 # filtering for 2030s
 WDD_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
-mean(WDD_2060$`50%`)
-sd(WDD_2060$`50%`)
 
 # Now you can use this data frame with ggplot2
 WDD_2060_ModelPlot <- ggplot(WDD_2060) +
@@ -3200,14 +2949,12 @@ WDD_2060_ModelPlot <- ggplot(WDD_2060) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = WDD)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("WDD - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 WDD_2060_ModelPlot
 
 WDD_2060_ModelErrorPlot <- ggplot(WDD_2060, mapping = aes(date)) +
@@ -3216,18 +2963,16 @@ WDD_2060_ModelErrorPlot <- ggplot(WDD_2060, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = WDD)) +
- geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("WDD - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 WDD_2060_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/WDD_2060_45_ModelPlot.jpeg", plot = WDD_2060_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/WDD_2060_45_ModelErrorPlot.jpeg", plot = WDD_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/WDD_2060_45_ModelPlot.jpeg", plot = WDD_2060_ModelPlot, width = 8, height = 6)
+ggsave("Plots/WDD_2060_45_ModelErrorPlot.jpeg", plot = WDD_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -3235,8 +2980,6 @@ ggsave("Output/SNAP/UniformError/Plots/CopperRiver/WDD_2060_45_ModelErrorPlot.jp
 # filtering for 2030s
 WDD_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
-mean(WDD_2090$`50%`)
-sd(WDD_2090$`50%`)
 
 # Now you can use this data frame with ggplot2
 WDD_2090_ModelPlot <- ggplot(WDD_2090) +
@@ -3244,14 +2987,12 @@ WDD_2090_ModelPlot <- ggplot(WDD_2090) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = WDD)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("WDD - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 WDD_2090_ModelPlot
 
 WDD_2090_ModelErrorPlot <- ggplot(WDD_2090, mapping = aes(date)) +
@@ -3260,18 +3001,16 @@ WDD_2090_ModelErrorPlot <- ggplot(WDD_2090, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = WDD)) +
-   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ggtitle("WDD - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 WDD_2090_ModelErrorPlot
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/WDD_2090_45_ModelPlot.jpeg", plot = WDD_2090_ModelPlot, width = 8, height = 6)
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/DD_2090_45_ModelErrorPlot.jpeg", plot = WDD_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/WDD_2090_45_ModelPlot.jpeg", plot = WDD_2090_ModelPlot, width = 8, height = 6)
+ggsave("Plots/WDD_2090_45_ModelErrorPlot.jpeg", plot = WDD_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # Graphing results
@@ -3800,7 +3539,7 @@ CRD_45_Mean <- ggplot(data = monthly_stats_long, aes(x = Month, y = Mean, fill =
         title = element_text(size = 14), plot.title = element_text(hjust = 0.5))
 CRD_45_Mean
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/CRD_45_Mean.jpeg", plot = CRD_45_Mean, width = 9, height = 6)
+ggsave("Plots/CRD_45_Mean.jpeg", plot = CRD_45_Mean, width = 9, height = 6)
 ```
 
 ```{r}
@@ -3867,6 +3606,6 @@ IndPonds_CRD45 <- ggplot(data = meltdf, aes(x = date)) +
   theme(plot.title = element_text(hjust = 0.5))
 IndPonds_CRD45
 
-ggsave("Output/SNAP/UniformError/Plots/CopperRiver/IndPonds_CRD45.jpeg", plot = IndPonds_CRD45, width = 9, height = 6)
+ggsave("Plots/IndPonds_CRD45.jpeg", plot = IndPonds_CRD45, width = 9, height = 6)
 
 ```

@@ -25,7 +25,7 @@ library(ggplot2)
 #### Copper River Delta
 
 ```{r}
-CR_snapTemp <- read.csv("DataFiles/CopperRiver_CreatedFiles/CordovaMonthlyTemperatures.csv", header = TRUE)
+CR_snapTemp <- read.csv("CordovaMonthlyTemperatures.csv", header = TRUE)
 
 # Pull out only the RCP 4.5 data
 CR_4.5 <- CR_snapTemp %>%
@@ -54,7 +54,7 @@ CR_4.5
 #### Yakutat Forelands
 
 ```{r}
-YF_snapTemp <- read.csv("DataFiles/YakutatForelands_CreatedFiles/YakutatMonthlyTemperatures.csv", header = TRUE)
+YF_snapTemp <- read.csv("DataFiles/YakutatMonthlyTemperatures.csv", header = TRUE)
 
 # Pull out only the RCP 4.5 data
 YF_4.5 <- YF_snapTemp %>%
@@ -73,7 +73,7 @@ test <- YF_4.5 %>%
   dplyr::select(date, tasmin, tasmean, tasmax) %>%
   dplyr::arrange(date)
 
-test$std <- (test$tasmax - test$tasmin)/4
+test$std <- (test$tasmax - test$tasmin)/2
 test$precision <- (1/(test$std^2))
 
 YF_4.5 <- test
@@ -91,12 +91,10 @@ CR_4.5
 CR_SNAP <- ggplot(data = CR_4.5, mapping = aes(x = date)) +
   geom_line(aes(y = tasmean), linewidth = 0.2) +
   xlab("Year") +
-  ylab("Mean Forecast Temperature (C)")+
-  ylim(-5, 20) +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Copper River SNAP Forecast - RCP 4.5") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5)) 
 CR_SNAP
 
 ggsave("CR_SNAP_Forecast4.5.jpeg", plot = CR_SNAP, width = 8, height = 6)
@@ -110,12 +108,10 @@ CR_4.5 <- test
 CR_SNAP <- ggplot(data = CR_4.5, mapping = aes(x = date)) +
   geom_line(aes(y = tasmean), linewidth = 0.2) +
   xlab("Year") +
-  ylab("Mean Forecast Temperature (C)")+
-  ylim(-5, 20) +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Copper River SNAP Forecast - RCP 4.5") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14)) 
+  theme(plot.title = element_text(hjust = 0.5)) 
 CR_SNAP
 
 ggsave("CR_SNAP_Forecast4.5_2020.jpeg", plot = CR_SNAP, width = 8, height = 6)
@@ -130,12 +126,10 @@ YF_4.5
 YF_SNAP <- ggplot(data = YF_4.5, mapping = aes(x = date)) +
   geom_line(aes(y = tasmean), linewidth = 0.2) +
   xlab("Year") +
-  ylab("Mean Forecast Temperature (C)") +
-  ylim(-5, 20) +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Yakutat Forelands SNAP Forecast - RCP 4.5") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5)) 
 YF_SNAP
 
 ggsave("YF_SNAP_Forecast4.5.jpeg", plot = YF_SNAP, width = 8, height = 6)
@@ -149,12 +143,10 @@ YF_4.5 <- test
 YF_SNAP <- ggplot(data = YF_4.5, mapping = aes(x = date)) +
   geom_line(aes(y = tasmean), linewidth = 0.2) +
   xlab("Year") +
- ylab("Mean Forecast Temperature (C)")+
-  ylim(-5, 20) +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Yakutat Forelands SNAP Forecast - RCP 4.5") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5)) 
 YF_SNAP
 
 ggsave("YF_SNAP_Forecast4.5_2020.jpeg", plot = YF_SNAP, width = 8, height = 6)
@@ -167,7 +159,7 @@ ggsave("YF_SNAP_Forecast4.5_2020.jpeg", plot = YF_SNAP, width = 8, height = 6)
 #### Copper River Delta
 
 ```{r}
-CR_snapTemp <- read.csv("DataFiles/CopperRiver_CreatedFiles/CordovaMonthlyTemperatures.csv", header = TRUE)
+CR_snapTemp <- read.csv("DataFiles/CordovaMonthlyTemperatures.csv", header = TRUE)
 
 # Pull out only the RCP 4.5 data
 CR_8.5 <- CR_snapTemp %>%
@@ -186,7 +178,7 @@ test <- CR_8.5 %>%
   dplyr::select(date, tasmin, tasmean, tasmax) %>%
   dplyr::arrange(date)
 
-test$std <- (test$tasmax - test$tasmin)/4
+test$std <- (test$tasmax - test$tasmin)/2
 test$precision <- (1/(test$std^2))
 
 CR_8.5 <- test
@@ -196,7 +188,7 @@ CR_8.5
 #### Yakutat Forelands
 
 ```{r}
-YF_snapTemp <- read.csv("DataFiles/YakutatForelands_CreatedFiles/YakutatMonthlyTemperatures.csv", header = TRUE)
+YF_snapTemp <- read.csv("DataFiles/YakutatMonthlyTemperatures.csv", header = TRUE)
 
 # Pull out only the RCP 4.5 data
 YF_8.5 <- YF_snapTemp %>%
@@ -233,12 +225,10 @@ CR_8.5
 CR_SNAP <- ggplot(data = CR_8.5, mapping = aes(x = date)) +
   geom_line(aes(y = tasmean), linewidth = 0.2) +
   xlab("Year") +
-  ylab("Mean Forecast Temperature (C)") +
-  ylim(-5, 20) +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Copper River SNAP Forecast - RCP 8.5") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5)) 
 CR_SNAP
 
 ggsave("CR_SNAP_Forecast8.5.jpeg", plot = CR_SNAP, width = 8, height = 6)
@@ -252,12 +242,10 @@ CR_8.5 <- test
 CR_SNAP <- ggplot(data = CR_8.5, mapping = aes(x = date)) +
   geom_line(aes(y = tasmean), linewidth = 0.2) +
   xlab("Year") +
-  ylab("Mean Forecast Temperature (C)") +
-  ylim(-5, 20) +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Copper River SNAP Forecast - RCP 8.5") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5)) 
 CR_SNAP
 
 ggsave("CR_SNAP_Forecast8.5_2020.jpeg", plot = CR_SNAP, width = 8, height = 6)
@@ -272,12 +260,10 @@ YF_8.5
 YF_SNAP <- ggplot(data = YF_8.5, mapping = aes(x = date)) +
   geom_line(aes(y = tasmean), linewidth = 0.2) +
   xlab("Year") +
-  ylab("Mean Forecast Temperature (C)") +
-  ylim(-5, 20) +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Yakutat Forelands SNAP Forecast - RCP 8.5") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5)) 
 YF_SNAP
 
 ggsave("YF_SNAP_Forecast8.5.jpeg", plot = YF_SNAP, width = 8, height = 6)
@@ -291,12 +277,10 @@ YF_8.5 <- test
 YF_SNAP <- ggplot(data = YF_8.5, mapping = aes(x = date)) +
   geom_line(aes(y = tasmean), linewidth = 0.2) +
   xlab("Year") +
-  ylab("Mean Forecast Temperature (C)")+
-  ylim(-5, 20) +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Yakutat Forelands SNAP Forecast - RCP 8.5") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5)) 
 YF_SNAP
 
 ggsave("YF_SNAP_Forecast8.5_2020.jpeg", plot = YF_SNAP, width = 8, height = 6)
@@ -311,7 +295,7 @@ ggsave("YF_SNAP_Forecast8.5_2020.jpeg", plot = YF_SNAP, width = 8, height = 6)
 Determining the columns needed for this
 
 ```{r}
-CR_ObsData <- read.csv("DataFiles/CopperRiver_CreatedFiles/CR_PondAirTemp_mean.csv", header=TRUE)
+CR_ObsData <- read.csv("CR_PondAirTemp_mean.csv", header=TRUE)
 head(CR_ObsData)
 
 # remove the first column here and change the column for Date to date
@@ -322,7 +306,7 @@ CR_ObsData <- CR_ObsData[,-1]
 head(CR_ObsData)
 
 CR_ObsData <- CR_ObsData %>%
-  dplyr::select(date, Airport, Air_MonthAvg, Air_MonthMax, Air_MonthMin, Region, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD)
+  dplyr::select(date, Airport, Air_MonthAvg, std, precision, Region, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD)
 CR_ObsData
 ```
 
@@ -351,7 +335,7 @@ CR_ObsData <- CR_ObsData[,-1]
 head(CR_ObsData)
 
 CR_ObsData <- CR_ObsData %>%
-  dplyr::select(date, Airport, Air_MonthAvg, Air_MonthMax, Air_MonthMin, Region, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD)
+  dplyr::select(date, Airport, Air_MonthAvg, std, precision, Region, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD)
 CR_ObsData
 ```
 
@@ -378,7 +362,7 @@ dim(YF_4.5) # 972 rows here, so need to make 972 blank rows
 Checking the observational data
 
 ```{r}
-YF_ObsData <- read.csv("DataFiles/YakutatForelands_CreatedFiles/YF_PondAirTemp_mean.csv", header=TRUE)
+YF_ObsData <- read.csv("DataFiles/YF_PondAirTemp_mean.csv", header=TRUE)
 head(YF_ObsData)
 
 # remove the first column here and change the column for Date to date
@@ -389,7 +373,7 @@ YF_ObsData <- YF_ObsData[,-1]
 head(YF_ObsData)
 
 YF_ObsData <- YF_ObsData %>%
-  dplyr::select(date, Airport, Air_MonthAvg, Air_MonthMax, Air_MonthMin, Region,  MP1, MP3, PL3, PL2, UBP3, MP5, MP8, UBP1, UBP2, PL1, UBP4)
+  dplyr::select(date, Airport, Air_MonthAvg, std, precision, Region,  MP1, MP3, PL3, PL2, UBP3, MP5, MP8, UBP1, UBP2, PL1, UBP4)
 YF_ObsData
 ```
 
@@ -414,8 +398,8 @@ CR_df
 #values where there is data
 CR_df$date <- CR_4.5$date
 CR_df$Air_MonthAvg <- CR_4.5$tasmean
-CR_df$Air_MonthMax<- CR_4.5$tasmax
-CR_df$Air_MonthMin <- CR_4.5$tasmin
+CR_df$std <- CR_4.5$std
+CR_df$precision <- CR_4.5$precision
 CR_df$Region <- rep("CR", nrow(CR_df))
 
 #values where there is not data
@@ -461,8 +445,8 @@ Adding in the data where it is available
 #values where there is data
 YF_df$date <- YF_4.5$date
 YF_df$Air_MonthAvg <- YF_4.5$tasmean
-YF_df$Air_MonthMax <- YF_4.5$tasmax
-YF_df$Air_MonthMin <- YF_4.5$tasmin
+YF_df$std <- YF_4.5$std
+YF_df$precision <- YF_4.5$precision
 YF_df$Region <- rep("YF", nrow(YF_df))
 
 #values where there is not data
@@ -507,7 +491,7 @@ write.csv(YF_45Forecast, file = "YF_45SNAPForecast.csv")
 Determining the columns needed for this
 
 ```{r}
-CR_ObsData <- read.csv("DataFiles/CopperRiver_CreatedFiles/CR_PondAirTemp_mean.csv", header=TRUE)
+CR_ObsData <- read.csv("DataFiles/CR_PondAirTemp_mean.csv", header=TRUE)
 head(CR_ObsData)
 
 # remove the first column here and change the column for Date to date
@@ -518,7 +502,7 @@ CR_ObsData <- CR_ObsData[,-1]
 head(CR_ObsData)
 
 CR_ObsData <- CR_ObsData %>%
-  select(date, Airport, Air_MonthAvg, Air_MonthMax, Air_MonthMin, Region, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD)
+  select(date, Airport, Air_MonthAvg, std, precision, Region, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD)
 CR_ObsData
 ```
 
@@ -536,7 +520,7 @@ dim(CR_8.5) # 972 rows here, so need to make 972 blank rows
 Checking the observational data
 
 ```{r}
-CR_ObsData <- read.csv("DataFiles/CopperRiver_CreatedFiles/CR_PondAirTemp_mean.csv", header=TRUE)
+CR_ObsData <- read.csv("DataFiles/CR_PondAirTemp_mean.csv", header=TRUE)
 head(CR_ObsData)
 
 # remove the first column here and change the column for Date to date
@@ -547,7 +531,7 @@ CR_ObsData <- CR_ObsData[,-1]
 head(CR_ObsData)
 
 CR_ObsData <- CR_ObsData %>%
-  select(date, Airport, Air_MonthAvg, Air_MonthMax, Air_MonthMin, Region, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD)
+  select(date, Airport, Air_MonthAvg, std, precision, Region, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD)
 CR_ObsData
 ```
 
@@ -574,7 +558,7 @@ dim(YF_8.5) # 972 rows here, so need to make 972 blank rows
 Checking the observational data
 
 ```{r}
-YF_ObsData <- read.csv("DataFiles/YakutatForelands_CreatedFiles/YF_PondAirTemp_mean.csv", header=TRUE)
+YF_ObsData <- read.csv("DataFiles/YF_PondAirTemp_mean.csv", header=TRUE)
 head(YF_ObsData)
 
 # remove the first column here and change the column for Date to date
@@ -585,7 +569,7 @@ YF_ObsData <- YF_ObsData[,-1]
 head(YF_ObsData)
 
 YF_ObsData <- YF_ObsData %>%
-  select(date, Airport, Air_MonthAvg, Air_MonthMax, Air_MonthMin, Region,  MP1, MP3, PL3, PL2, UBP3, MP5, MP8, UBP1, UBP2, PL1, UBP4)
+  select(date, Airport, Air_MonthAvg, std, precision, Region,  MP1, MP3, PL3, PL2, UBP3, MP5, MP8, UBP1, UBP2, PL1, UBP4)
 YF_ObsData
 ```
 
@@ -610,8 +594,8 @@ CR_df
 #values where there is data
 CR_df$date <- CR_8.5$date
 CR_df$Air_MonthAvg <- CR_8.5$tasmean
-CR_df$Air_MonthMax <- CR_8.5$tasmax
-CR_df$Air_MonthMin <- CR_8.5$tasmin
+CR_df$std <- CR_8.5$std
+CR_df$precision <- CR_8.5$precision
 CR_df$Region <- rep("CR", nrow(CR_df))
 
 #values where there is not data
@@ -657,8 +641,8 @@ YF_df
 #values where there is data
 YF_df$date <- YF_8.5$date
 YF_df$Air_MonthAvg <- YF_8.5$tasmean
-YF_df$Air_MonthMax <- YF_8.5$tasmax
-YF_df$Air_MonthMin <- YF_8.5$tasmin
+YF_df$std <- YF_8.5$std
+YF_df$precision <- YF_8.5$precision
 YF_df$Region <- rep("YF", nrow(YF_df))
 
 #values where there is not data
@@ -706,16 +690,12 @@ write.csv(YF_85Forecast, file = "YF_85SNAPForecast.csv")
 CR_45Forecast 
 
 CR_45Temps<- ggplot(data = CR_45Forecast, mapping = aes(x = date)) +
-  geom_ribbon(mapping = aes(ymin = Air_MonthMin, ymax = Air_MonthMax), fill = "darkgrey") +
   geom_line(mapping = aes(y = Air_MonthAvg)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1.5) +
   xlab("Year") +
   ylab("Mean Temperature (C)") +
-  ylim(-10,20) +
+  ggtitle("Copper River Delta Temperature - RCP 4.5") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 CR_45Temps
 
 ggsave("CR_45Temps.jpeg", plot = CR_45Temps, width = 8, height = 6)
@@ -727,16 +707,12 @@ ggsave("CR_45Temps.jpeg", plot = CR_45Temps, width = 8, height = 6)
 YF_45Forecast 
 
 YF_45Temps<- ggplot(data = YF_45Forecast, mapping = aes(x = date)) +
-  geom_ribbon(mapping = aes(ymin = Air_MonthMin, ymax = Air_MonthMax), fill = "darkgrey") +
   geom_line(mapping = aes(y = Air_MonthAvg)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1.5) +
   xlab("Year") +
   ylab("Mean Temperature (C)") +
-  ylim(-10,20) +
+  ggtitle("Yakutat Forelands Temperature - RCP 4.5") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 YF_45Temps
 
 ggsave("YF_45Temps.jpeg", plot = YF_45Temps, width = 8, height = 6)
@@ -750,16 +726,12 @@ ggsave("YF_45Temps.jpeg", plot = YF_45Temps, width = 8, height = 6)
 CR_85Forecast 
 
 CR_85Temps<- ggplot(data = CR_85Forecast, mapping = aes(x = date)) +
-  geom_ribbon(mapping = aes(ymin = Air_MonthMin, ymax = Air_MonthMax), fill = "darkgrey") +
   geom_line(mapping = aes(y = Air_MonthAvg)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1.5) +
   xlab("Year") +
   ylab("Mean Temperature (C)") +
-  ylim(-10,20) +
+  ggtitle("Copper River Delta Temperature - RCP 8.5") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 CR_85Temps
 
 ggsave("CR_85Temps.jpeg", plot = CR_85Temps, width = 8, height = 6)
@@ -771,16 +743,12 @@ ggsave("CR_85Temps.jpeg", plot = CR_85Temps, width = 8, height = 6)
 YF_85Forecast 
 
 YF_85Temps<- ggplot(data = YF_85Forecast, mapping = aes(x = date)) +
-  geom_ribbon(mapping = aes(ymin = Air_MonthMin, ymax = Air_MonthMax), fill = "darkgrey") +
   geom_line(mapping = aes(y = Air_MonthAvg)) +
-  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1.5) +
   xlab("Year") +
   ylab("Mean Temperature (C)") +
-  ylim(-10,20) +
+  ggtitle("Yakutat Forelands Temperature - RCP 8.5") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14))
+  theme(plot.title = element_text(hjust = 0.5))
 YF_85Temps
 
 ggsave("YF_85Temps.jpeg", plot = YF_85Temps, width = 8, height = 6)
