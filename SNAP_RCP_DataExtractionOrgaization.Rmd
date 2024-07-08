@@ -291,7 +291,7 @@ YF_8.5 <- test
 YF_SNAP <- ggplot(data = YF_8.5, mapping = aes(x = date)) +
   geom_line(aes(y = tasmean), linewidth = 0.2) +
   xlab("Year") +
- ylab("Mean Forecast Temperature (C)")+
+  ylab("Mean Forecast Temperature (C)")+
   ylim(-5, 20) +
   theme_classic() +
   theme(plot.title = element_text(hjust = 0.5),
