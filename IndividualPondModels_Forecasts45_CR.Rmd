@@ -33,7 +33,7 @@ library("hydroGOF")
 ## Start by loading in the Copper River Delta mean data set
 
 ```{r}
-CR_Temps <- read.csv("DataFiles/CR_45Forecast.csv", header=TRUE)
+CR_Temps <- read.csv("DataFiles/CR_45SNAPForecast.csv", header=TRUE)
 
 library(dplyr)
 # remove the first column here and change the column for Date to date
@@ -92,7 +92,7 @@ CR_PondTemp
 
 
 # Save the plot
-ggsave("Plots/CR_PondTemp.png", plot = CR_PondTemp, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/CR_PondTemp.png", plot = CR_PondTemp, width = 8, height = 6)
 
 ```
 
@@ -251,12 +251,15 @@ BVSModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = BVS)) +
-  ggtitle("BVS - Copper River Delta - RCP 4.5")+
+  geom_vline()
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 BVSModelPlot
 
 BVSModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -265,16 +268,18 @@ BVSModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = BVS)) +
-  ggtitle("BVS - Copper River Delta - RCP 4.5")+
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 BVSModelErrorPlot
 
-ggsave("Plots/BVS_45_ModelPlot.jpeg", plot = BVSModelPlot, width = 8, height = 6)
-ggsave("Plots/BVS_45_ModelErrorPlot.jpeg", plot = BVSModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/BVS_45_ModelPlot.jpeg", plot = BVSModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/BVS_45_ModelErrorPlot.jpeg", plot = BVSModelErrorPlot, width = 8, height = 6)
 ```
 
 ## Calculating the NSE (Nash-Sutcliffe efficiency) between our modeled/simulated values and the observations
@@ -304,7 +309,7 @@ BVSModelErrorPlot <- ggplot(BVSMod, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 BVSModelErrorPlot
 
-ggsave("Plots/BVS_ObsModelPlot_45.jpeg", plot = BVSModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/BVS_ObsModelPlot_45.jpeg", plot = BVSModelErrorPlot, width = 8, height = 6)
 
 ```
 
@@ -344,8 +349,8 @@ BVS_2030_ModelErrorPlot <- ggplot(BVS_2030, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 BVS_2030_ModelErrorPlot
 
-ggsave("Plots/BVS_2030_45_ModelPlot.jpeg", plot = BVS_2030_ModelPlot, width = 8, height = 6)
-ggsave("Plots/BVS_2030_45_ModelErrorPlot.jpeg", plot = BVS_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/BVS_2030_45_ModelPlot.jpeg", plot = BVS_2030_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/BVS_2030_45_ModelErrorPlot.jpeg", plot = BVS_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -382,8 +387,8 @@ BVS_2060_ModelErrorPlot <- ggplot(BVS_2060, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 BVS_2060_ModelErrorPlot
 
-ggsave("Plots/BVS_2060_45_ModelPlot.jpeg", plot = BVS_2060_ModelPlot, width = 8, height = 6)
-ggsave("Plots/BVS_2060_45_ModelErrorPlot.jpeg", plot = BVS_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/BVS_2060_45_ModelPlot.jpeg", plot = BVS_2060_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/BVS_2060_45_ModelErrorPlot.jpeg", plot = BVS_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -420,8 +425,8 @@ BVS_2090_ModelErrorPlot <- ggplot(BVS_2090, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 BVS_2090_ModelErrorPlot
 
-ggsave("Plots/BVS_2090_45_ModelPlot.jpeg", plot = BVS_2090_ModelPlot, width = 8, height = 6)
-ggsave("Plots/BVS_2090_45_ModelErrorPlot.jpeg", plot = BVS_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/BVS_2090_45_ModelPlot.jpeg", plot = BVS_2090_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/BVS_2090_45_ModelErrorPlot.jpeg", plot = BVS_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # CAB
@@ -597,8 +602,8 @@ CABModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 CABModelErrorPlot
 
-ggsave("Plots/CAB_45_ModelPlot.jpeg", plot = CABModelPlot, width = 8, height = 6)
-ggsave("Plots/CAB_45_ModelErrorPlot.jpeg", plot = CABModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/CAB_45_ModelPlot.jpeg", plot = CABModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/CAB_45_ModelErrorPlot.jpeg", plot = CABModelErrorPlot, width = 8, height = 6)
 ```
 ```{r}
 CABMod <- GraphDataOutputCheck
@@ -626,7 +631,7 @@ CABModelErrorPlot <- ggplot(CABMod, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 CABModelErrorPlot
 
-ggsave("Plots/CAB_ObsModelPlot_45.jpeg", plot = CABModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/CAB_ObsModelPlot_45.jpeg", plot = CABModelErrorPlot, width = 8, height = 6)
 ```
 
 ####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
@@ -665,8 +670,8 @@ CAB_2030_ModelErrorPlot <- ggplot(CAB_2030, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 CAB_2030_ModelErrorPlot
 
-ggsave("Plots/CAB_2030_45_ModelPlot.jpeg", plot = CAB_2030_ModelPlot, width = 8, height = 6)
-ggsave("Plots/CAB_2030_45_ModelErrorPlot.jpeg", plot = CAB_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/CAB_2030_45_ModelPlot.jpeg", plot = CAB_2030_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/CAB_2030_45_ModelErrorPlot.jpeg", plot = CAB_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -703,8 +708,8 @@ CAB_2060_ModelErrorPlot <- ggplot(CAB_2060, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 CAB_2060_ModelErrorPlot
 
-ggsave("Plots/CAB_2060_45_ModelPlot.jpeg", plot = CAB_2060_ModelPlot, width = 8, height = 6)
-ggsave("Plots/CAB_2060_45_ModelErrorPlot.jpeg", plot = CAB_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/CAB_2060_45_ModelPlot.jpeg", plot = CAB_2060_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/CAB_2060_45_ModelErrorPlot.jpeg", plot = CAB_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -741,8 +746,8 @@ CAB_2090_ModelErrorPlot <- ggplot(CAB_2090, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 CAB_2090_ModelErrorPlot
 
-ggsave("Plots/CAB_2090_45_ModelPlot.jpeg", plot = CAB_2090_ModelPlot, width = 8, height = 6)
-ggsave("Plots/CAB_2090_45_ModelErrorPlot.jpeg", plot = CAB_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/CAB_2090_45_ModelPlot.jpeg", plot = CAB_2090_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/CAB_2090_45_ModelErrorPlot.jpeg", plot = CAB_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # CAN
@@ -896,12 +901,14 @@ CANModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = CAN)) +
-  ggtitle("CAN - Copper River Delta - RCP 4.5")+
-  ylim(-10,30)+
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 CANModelPlot
 
 CANModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -910,16 +917,18 @@ CANModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = CAN)) +
-  ggtitle("CAN - Copper River Delta - RCP 4.5")+
-  ylim(-10,30)+
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 CANModelErrorPlot
 
-ggsave("Plots/CAN_45_ModelPlot.jpeg", plot = CANModelPlot, width = 8, height = 6)
-ggsave("Plots/CAN_45_ModelErrorPlot.jpeg", plot = CANModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/CAN_45_ModelPlot.jpeg", plot = CANModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/CAN_45_ModelErrorPlot.jpeg", plot = CANModelErrorPlot, width = 8, height = 6)
 ```
 ## Getting the NSE Values
 ```{r}
@@ -948,7 +957,7 @@ CANModelErrorPlot <- ggplot(CANMod, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 CANModelErrorPlot
 
-ggsave("Plots/CAN_ObsModelPlot_45.jpeg", plot = CANModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/CAN_ObsModelPlot_45.jpeg", plot = CANModelErrorPlot, width = 8, height = 6)
 
 ```
 ####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
@@ -987,8 +996,8 @@ CAN_2030_ModelErrorPlot <- ggplot(CAN_2030, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 CAN_2030_ModelErrorPlot
 
-ggsave("Plots/CAN_2030_45_ModelPlot.jpeg", plot = CAN_2030_ModelPlot, width = 8, height = 6)
-ggsave("Plots/CAN_2030_45_ModelErrorPlot.jpeg", plot = CAN_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/CAN_2030_45_ModelPlot.jpeg", plot = CAN_2030_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/CAN_2030_45_ModelErrorPlot.jpeg", plot = CAN_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -1025,8 +1034,8 @@ CAN_2060_ModelErrorPlot <- ggplot(CAN_2060, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 CAN_2060_ModelErrorPlot
 
-ggsave("Plots/CAN_2060_45_ModelPlot.jpeg", plot = CAN_2060_ModelPlot, width = 8, height = 6)
-ggsave("Plots/CAN_2060_45_ModelErrorPlot.jpeg", plot = CAN_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/CAN_2060_45_ModelPlot.jpeg", plot = CAN_2060_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/CAN_2060_45_ModelErrorPlot.jpeg", plot = CAN_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -1063,8 +1072,8 @@ CAN_2090_ModelErrorPlot <- ggplot(CAN_2090, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 CAN_2090_ModelErrorPlot
 
-ggsave("Plots/CAN_2090_45_ModelPlot.jpeg", plot = CAN_2090_ModelPlot, width = 8, height = 6)
-ggsave("Plots/CAN_2090_45_ModelErrorPlot.jpeg", plot = CAN_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/CAN_2090_45_ModelPlot.jpeg", plot = CAN_2090_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/CAN_2090_45_ModelErrorPlot.jpeg", plot = CAN_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # EYS
@@ -1218,12 +1227,14 @@ EYSModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = EYS)) +
-  ggtitle("EYS - Copper River Delta - RCP 4.5")+
-  ylim(-10,30)+
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 EYSModelPlot
 
 EYSModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -1232,16 +1243,18 @@ EYSModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = EYS)) +
-  ggtitle("EYS - Copper River Delta - RCP 4.5")+
-  ylim(-10,30)+
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 EYSModelErrorPlot
 
-ggsave("Plots/EYS_45_ModelPlot.jpeg", plot = EYSModelPlot, width = 8, height = 6)
-ggsave("Plots/EYS_45_ModelErrorPlot.jpeg", plot = EYSModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/EYS_45_ModelPlot.jpeg", plot = EYSModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/EYS_45_ModelErrorPlot.jpeg", plot = EYSModelErrorPlot, width = 8, height = 6)
 ```
 
 ## Getting the NSE Values
@@ -1271,7 +1284,7 @@ EYSModelErrorPlot <- ggplot(EYSMod, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 EYSModelErrorPlot
 
-ggsave("Plots/EYS_ObsModelPlot_45.jpeg", plot = EYSModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/EYS_ObsModelPlot_45.jpeg", plot = EYSModelErrorPlot, width = 8, height = 6)
 
 ```
 
@@ -1311,8 +1324,8 @@ EYS_2030_ModelErrorPlot <- ggplot(EYS_2030, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 EYS_2030_ModelErrorPlot
 
-ggsave("Plots/EYS_2030_45_ModelPlot.jpeg", plot = EYS_2030_ModelPlot, width = 8, height = 6)
-ggsave("Plots/EYS_2030_45_ModelErrorPlot.jpeg", plot = EYS_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/EYS_2030_45_ModelPlot.jpeg", plot = EYS_2030_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/EYS_2030_45_ModelErrorPlot.jpeg", plot = EYS_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -1349,8 +1362,8 @@ EYS_2060_ModelErrorPlot <- ggplot(EYS_2060, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 EYS_2060_ModelErrorPlot
 
-ggsave("Plots/EYS_2060_45_ModelPlot.jpeg", plot = EYS_2060_ModelPlot, width = 8, height = 6)
-ggsave("Plots/EYS_2060_45_ModelErrorPlot.jpeg", plot = EYS_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/EYS_2060_45_ModelPlot.jpeg", plot = EYS_2060_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/EYS_2060_45_ModelErrorPlot.jpeg", plot = EYS_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -1387,8 +1400,8 @@ EYS_2090_ModelErrorPlot <- ggplot(EYS_2090, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 EYS_2090_ModelErrorPlot
 
-ggsave("Plots/EYS_2090_45_ModelPlot.jpeg", plot = EYS_2090_ModelPlot, width = 8, height = 6)
-ggsave("Plots/EYS_2090_45_ModelErrorPlot.jpeg", plot = EYS_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/EYS_2090_45_ModelPlot.jpeg", plot = EYS_2090_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/EYS_2090_45_ModelErrorPlot.jpeg", plot = EYS_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # RHM
@@ -1542,12 +1555,14 @@ RHM_45_ModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = RHM)) +
-  ggtitle("RHM - Copper River Delta - RCP 4.5")+
-  ylim(-10, 30)+
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 RHM_45_ModelPlot
 
 RHM_45_ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -1556,17 +1571,18 @@ RHM_45_ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = RHM)) +
-  
-  ggtitle("RHM - Copper River Delta - RCP 4.5")+
-  ylim(-10,30) +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 RHM_45_ModelErrorPlot
 
-ggsave("Plots/RHM_45_ModelPlot.jpeg", plot = RHM_45_ModelPlot, width = 8, height = 6)
-ggsave("Plots/RHM_45_ModelErrorPlot.jpeg", plot = RHM_45_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/RHM_45_ModelPlot.jpeg", plot = RHM_45_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/RHM_45_ModelErrorPlot.jpeg", plot = RHM_45_ModelErrorPlot, width = 8, height = 6)
 ```
 ## Getting the NSE Values
 ```{r}
@@ -1595,7 +1611,7 @@ RHMModelErrorPlot <- ggplot(RHMMod, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 RHMModelErrorPlot
 
-ggsave("Plots/RHM_ObsModelPlot_45.jpeg", plot = RHMModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/RHM_ObsModelPlot_45.jpeg", plot = RHMModelErrorPlot, width = 8, height = 6)
 
 ```
 ####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
@@ -1635,8 +1651,8 @@ RHM_2030_ModelErrorPlot <- ggplot(RHM_2030, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 RHM_2030_ModelErrorPlot
 
-ggsave("Plots/RHM_2030_45_ModelPlot.jpeg", plot = RHM_2030_ModelPlot, width = 8, height = 6)
-ggsave("Plots/RHM_2030_45_ModelErrorPlot.jpeg", plot = RHM_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/RHM_2030_45_ModelPlot.jpeg", plot = RHM_2030_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/RHM_2030_45_ModelErrorPlot.jpeg", plot = RHM_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -1674,8 +1690,8 @@ RHM_2060_ModelErrorPlot <- ggplot(RHM_2060, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 RHM_2060_ModelErrorPlot
 
-ggsave("Plots/RHM_2060_45_ModelPlot.jpeg", plot = RHM_2060_ModelPlot, width = 8, height = 6)
-ggsave("Plots/RHM_2060_45_ModelErrorPlot.jpeg", plot = RHM_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/RHM_2060_45_ModelPlot.jpeg", plot = RHM_2060_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/RHM_2060_45_ModelErrorPlot.jpeg", plot = RHM_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -1713,8 +1729,8 @@ RHM_2090_ModelErrorPlot <- ggplot(RHM_2090, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 RHM_2090_ModelErrorPlot
 
-ggsave("Plots/RHM_2090_45_ModelPlot.jpeg", plot = RHM_2090_ModelPlot, width = 8, height = 6)
-ggsave("Plots/RHM_2090_45_ModelErrorPlot.jpeg", plot = RHM_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/RHM_2090_45_ModelPlot.jpeg", plot = RHM_2090_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/RHM_2090_45_ModelErrorPlot.jpeg", plot = RHM_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # SQR
@@ -1868,12 +1884,14 @@ SQR_45_ModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = SQR)) +
-  ggtitle("SQR - Copper River Delta - RCP 4.5")+
-  ylim(-10, 30) +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 SQR_45_ModelPlot
 
 SQR_45_ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -1882,16 +1900,18 @@ SQR_45_ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = SQR)) +
-  ggtitle("SQR - Copper River Delta - RCP 4.5")+
-  ylim(-10,30) +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 SQR_45_ModelErrorPlot
 
-ggsave("Plots/SQR_45_ModelPlot.jpeg", plot = SQR_45_ModelPlot, width = 8, height = 6)
-ggsave("Plots/SQR_45_ModelErrorPlot.jpeg", plot = SQR_45_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/SQR_45_ModelPlot.jpeg", plot = SQR_45_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/SQR_45_ModelErrorPlot.jpeg", plot = SQR_45_ModelErrorPlot, width = 8, height = 6)
 ```
 
 ## Getting the NSE Values
@@ -1921,7 +1941,7 @@ SQRModelErrorPlot <- ggplot(SQRMod, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 SQRModelErrorPlot
 
-ggsave("Plots/SQR_ObsModelPlot_45.jpeg", plot = SQRModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/SQR_ObsModelPlot_45.jpeg", plot = SQRModelErrorPlot, width = 8, height = 6)
 
 ```
 
@@ -1961,8 +1981,8 @@ SQR_2030_ModelErrorPlot <- ggplot(SQR_2030, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 SQR_2030_ModelErrorPlot
 
-ggsave("Plots/SQR_2030_45_ModelPlot.jpeg", plot = SQR_2030_ModelPlot, width = 8, height = 6)
-ggsave("Plots/SQR_2030_45_ModelErrorPlot.jpeg", plot = SQR_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/SQR_2030_45_ModelPlot.jpeg", plot = SQR_2030_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/SQR_2030_45_ModelErrorPlot.jpeg", plot = SQR_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -1999,8 +2019,8 @@ SQR_2060_ModelErrorPlot <- ggplot(SQR_2060, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 SQR_2060_ModelErrorPlot
 
-ggsave("Plots/SQR_2060_45_ModelPlot.jpeg", plot = SQR_2060_ModelPlot, width = 8, height = 6)
-ggsave("Plots/SQR_2060_45_ModelErrorPlot.jpeg", plot = SQR_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/SQR_2060_45_ModelPlot.jpeg", plot = SQR_2060_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/SQR_2060_45_ModelErrorPlot.jpeg", plot = SQR_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -2037,8 +2057,8 @@ SQR_2090_ModelErrorPlot <- ggplot(SQR_2090, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 SQR_2090_ModelErrorPlot
 
-ggsave("Plots/SQR_2090_45_ModelPlot.jpeg", plot = SQR_2090_ModelPlot, width = 8, height = 6)
-ggsave("Plots/SQR_2090_45_ModelErrorPlot.jpeg", plot = SQR_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/SQR_2090_45_ModelPlot.jpeg", plot = SQR_2090_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/SQR_2090_45_ModelErrorPlot.jpeg", plot = SQR_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # TIN
@@ -2214,8 +2234,8 @@ TIN_45_ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 TIN_45_ModelErrorPlot
 
-ggsave("Plots/TIN_45_ModelPlot.jpeg", plot = TIN_45_ModelPlot, width = 8, height = 6)
-ggsave("Plots/TIN_45_ModelErrorPlot.jpeg", plot = TIN_45_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/TIN_45_ModelPlot.jpeg", plot = TIN_45_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/TIN_45_ModelErrorPlot.jpeg", plot = TIN_45_ModelErrorPlot, width = 8, height = 6)
 ```
 
 ## Getting the NSE Values
@@ -2245,7 +2265,7 @@ TINModelErrorPlot <- ggplot(TINMod, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 TINModelErrorPlot
 
-ggsave("Plots/TIN_ObsModelPlot_45.jpeg", plot = TINModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/TIN_ObsModelPlot_45.jpeg", plot = TINModelErrorPlot, width = 8, height = 6)
 
 ```
 
@@ -2285,8 +2305,8 @@ TIN_2030_ModelErrorPlot <- ggplot(TIN_2030, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 TIN_2030_ModelErrorPlot
 
-ggsave("Plots/TIN_2030_45_ModelPlot.jpeg", plot = TIN_2030_ModelPlot, width = 8, height = 6)
-ggsave("Plots/TIN_2030_45_ModelErrorPlot.jpeg", plot = TIN_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/TIN_2030_45_ModelPlot.jpeg", plot = TIN_2030_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/TIN_2030_45_ModelErrorPlot.jpeg", plot = TIN_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -2323,8 +2343,8 @@ TIN_2060_ModelErrorPlot <- ggplot(TIN_2060, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 TIN_2060_ModelErrorPlot
 
-ggsave("Plots/TIN_2060_45_ModelPlot.jpeg", plot = TIN_2060_ModelPlot, width = 8, height = 6)
-ggsave("Plots/TIN_2060_45_ModelErrorPlot.jpeg", plot = TIN_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/TIN_2060_45_ModelPlot.jpeg", plot = TIN_2060_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/TIN_2060_45_ModelErrorPlot.jpeg", plot = TIN_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -2361,8 +2381,8 @@ TIN_2090_ModelErrorPlot <- ggplot(TIN_2090, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 TIN_2090_ModelErrorPlot
 
-ggsave("Plots/TIN_2090_45_ModelPlot.jpeg", plot = TIN_2090_ModelPlot, width = 8, height = 6)
-ggsave("Plots/TIN_2090_45_ModelErrorPlot.jpeg", plot = TIN_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/TIN_2090_45_ModelPlot.jpeg", plot = TIN_2090_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/TIN_2090_45_ModelErrorPlot.jpeg", plot = TIN_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # TIS
@@ -2516,12 +2536,14 @@ TISModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = TIS)) +
-  ggtitle("TIS - Copper River Delta - RCP 4.5")+
-  ylim(-10,30) +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 TISModelPlot
 
 TISModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -2530,16 +2552,18 @@ TISModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = TIS)) +
-  ggtitle("TIS- Copper River Delta - RCP 4.5")+
-  ylim(-10,30) +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 TISModelErrorPlot
 
-ggsave("Plots/TIS_45_ModelPlot.jpeg", plot = TISModelPlot, width = 8, height = 6)
-ggsave("Plots/TIS_45_ModelErrorPlot.jpeg", plot = TISModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/TIS_45_ModelPlot.jpeg", plot = TISModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/TIS_45_ModelErrorPlot.jpeg", plot = TISModelErrorPlot, width = 8, height = 6)
 ```
 
 ## Getting the NSE Values
@@ -2569,7 +2593,7 @@ TISModelErrorPlot <- ggplot(TISMod, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 TISModelErrorPlot
 
-ggsave("Plots/TIS_ObsModelPlot_45.jpeg", plot = TISModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/TIS_ObsModelPlot_45.jpeg", plot = TISModelErrorPlot, width = 8, height = 6)
 
 ```
 
@@ -2609,8 +2633,8 @@ TIS_2030_ModelErrorPlot <- ggplot(TIS_2030, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 TIS_2030_ModelErrorPlot
 
-ggsave("Plots/TIS_2030_45_ModelPlot.jpeg", plot = TIS_2030_ModelPlot, width = 8, height = 6)
-ggsave("Plots/TIS_2030_45_ModelErrorPlot.jpeg", plot = TIS_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/TIS_2030_45_ModelPlot.jpeg", plot = TIS_2030_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/TIS_2030_45_ModelErrorPlot.jpeg", plot = TIS_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -2647,8 +2671,8 @@ TIS_2060_ModelErrorPlot <- ggplot(TIS_2060, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 TIS_2060_ModelErrorPlot
 
-ggsave("Plots/TIS_2060_45_ModelPlot.jpeg", plot = TIS_2060_ModelPlot, width = 8, height = 6)
-ggsave("Plots/TIS_2060_45_ModelErrorPlot.jpeg", plot = TIS_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/TIS_2060_45_ModelPlot.jpeg", plot = TIS_2060_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/TIS_2060_45_ModelErrorPlot.jpeg", plot = TIS_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -2685,8 +2709,8 @@ TIS_2090_ModelErrorPlot <- ggplot(TIS_2090, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 TIS_2090_ModelErrorPlot
 
-ggsave("Plots/TIS_2090_45_ModelPlot.jpeg", plot = TIS_2090_ModelPlot, width = 8, height = 6)
-ggsave("Plots/TIS_2090_45_ModelErrorPlot.jpeg", plot = TIS_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/TIS_2090_45_ModelPlot.jpeg", plot = TIS_2090_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/TIS_2090_45_ModelErrorPlot.jpeg", plot = TIS_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # WDD
@@ -2840,12 +2864,14 @@ WDDModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = WDD)) +
-  ggtitle("WDD - Copper River Delta - RCP 4.5")+
-  ylim(-10,30) +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 WDDModelPlot
 
 WDDModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -2854,16 +2880,18 @@ WDDModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = WDD)) +
-  ggtitle("WDD- Copper River Delta - RCP 4.5")+
-  ylim(-10,30) +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 WDDModelErrorPlot
 
-ggsave("Plots/WDD_45_ModelPlot.jpeg", plot = WDDModelPlot, width = 8, height = 6)
-ggsave("Plots/WDD_45_ModelErrorPlot.jpeg", plot = WDDModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/WDD_45_ModelPlot.jpeg", plot = WDDModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/WDD_45_ModelErrorPlot.jpeg", plot = WDDModelErrorPlot, width = 8, height = 6)
 ```
 
 
@@ -2894,7 +2922,7 @@ WDDModelErrorPlot <- ggplot(WDDMod, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 WDDModelErrorPlot
 
-ggsave("Plots/WDD_ObsModelPlot_45.jpeg", plot = WDDModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/WDD_ObsModelPlot_45.jpeg", plot = WDDModelErrorPlot, width = 8, height = 6)
 
 ```
 ####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
@@ -2933,8 +2961,8 @@ WDD_2030_ModelErrorPlot <- ggplot(WDD_2030, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 WDD_2030_ModelErrorPlot
 
-ggsave("Plots/WDD_2030_45_ModelPlot.jpeg", plot = WDD_2030_ModelPlot, width = 8, height = 6)
-ggsave("Plots/WDD_2030_45_ModelErrorPlot.jpeg", plot = WDD_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/WDD_2030_45_ModelPlot.jpeg", plot = WDD_2030_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/WDD_2030_45_ModelErrorPlot.jpeg", plot = WDD_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -2971,8 +2999,8 @@ WDD_2060_ModelErrorPlot <- ggplot(WDD_2060, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 WDD_2060_ModelErrorPlot
 
-ggsave("Plots/WDD_2060_45_ModelPlot.jpeg", plot = WDD_2060_ModelPlot, width = 8, height = 6)
-ggsave("Plots/WDD_2060_45_ModelErrorPlot.jpeg", plot = WDD_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/WDD_2060_45_ModelPlot.jpeg", plot = WDD_2060_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/WDD_2060_45_ModelErrorPlot.jpeg", plot = WDD_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -3009,8 +3037,8 @@ WDD_2090_ModelErrorPlot <- ggplot(WDD_2090, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 WDD_2090_ModelErrorPlot
 
-ggsave("Plots/WDD_2090_45_ModelPlot.jpeg", plot = WDD_2090_ModelPlot, width = 8, height = 6)
-ggsave("Plots/WDD_2090_45_ModelErrorPlot.jpeg", plot = WDD_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/WDD_2090_45_ModelPlot.jpeg", plot = WDD_2090_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/WDD_2090_45_ModelErrorPlot.jpeg", plot = WDD_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # Graphing results
@@ -3539,7 +3567,7 @@ CRD_45_Mean <- ggplot(data = monthly_stats_long, aes(x = Month, y = Mean, fill =
         title = element_text(size = 14), plot.title = element_text(hjust = 0.5))
 CRD_45_Mean
 
-ggsave("Plots/CRD_45_Mean.jpeg", plot = CRD_45_Mean, width = 9, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/CRD_45_Mean.jpeg", plot = CRD_45_Mean, width = 9, height = 6)
 ```
 
 ```{r}
@@ -3606,6 +3634,6 @@ IndPonds_CRD45 <- ggplot(data = meltdf, aes(x = date)) +
   theme(plot.title = element_text(hjust = 0.5))
 IndPonds_CRD45
 
-ggsave("Plots/IndPonds_CRD45.jpeg", plot = IndPonds_CRD45, width = 9, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/IndPonds_CRD45.jpeg", plot = IndPonds_CRD45, width = 9, height = 6)
 
 ```

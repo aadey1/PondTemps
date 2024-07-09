@@ -25,7 +25,7 @@ library(ggplot2)
 #### Copper River Delta
 
 ```{r}
-CR_snapTemp <- read.csv("CordovaMonthlyTemperatures.csv", header = TRUE)
+CR_snapTemp <- read.csv("DataFiles/CopperRiver_CreatedFiles/CordovaMonthlyTemperatures.csv", header = TRUE)
 
 # Pull out only the RCP 4.5 data
 CR_4.5 <- CR_snapTemp %>%
@@ -54,7 +54,7 @@ CR_4.5
 #### Yakutat Forelands
 
 ```{r}
-YF_snapTemp <- read.csv("DataFiles/YakutatMonthlyTemperatures.csv", header = TRUE)
+YF_snapTemp <- read.csv("DataFiles/YakutatForelands_CreatedFiles/YakutatMonthlyTemperatures.csv", header = TRUE)
 
 # Pull out only the RCP 4.5 data
 YF_4.5 <- YF_snapTemp %>%
@@ -159,7 +159,7 @@ ggsave("YF_SNAP_Forecast4.5_2020.jpeg", plot = YF_SNAP, width = 8, height = 6)
 #### Copper River Delta
 
 ```{r}
-CR_snapTemp <- read.csv("DataFiles/CordovaMonthlyTemperatures.csv", header = TRUE)
+CR_snapTemp <- read.csv("DataFiles/CopperRiver_CreatedFiles/CordovaMonthlyTemperatures.csv", header = TRUE)
 
 # Pull out only the RCP 4.5 data
 CR_8.5 <- CR_snapTemp %>%
@@ -188,7 +188,7 @@ CR_8.5
 #### Yakutat Forelands
 
 ```{r}
-YF_snapTemp <- read.csv("DataFiles/YakutatMonthlyTemperatures.csv", header = TRUE)
+YF_snapTemp <- read.csv("DataFiles/YakutatForelands_CreatedFiles/YakutatMonthlyTemperatures.csv", header = TRUE)
 
 # Pull out only the RCP 4.5 data
 YF_8.5 <- YF_snapTemp %>%
@@ -295,7 +295,7 @@ ggsave("YF_SNAP_Forecast8.5_2020.jpeg", plot = YF_SNAP, width = 8, height = 6)
 Determining the columns needed for this
 
 ```{r}
-CR_ObsData <- read.csv("CR_PondAirTemp_mean.csv", header=TRUE)
+CR_ObsData <- read.csv("DataFiles/CopperRiver_CreatedFiles/CR_PondAirTemp_mean.csv", header=TRUE)
 head(CR_ObsData)
 
 # remove the first column here and change the column for Date to date
@@ -324,7 +324,7 @@ dim(CR_4.5) # 972 rows here, so need to make 972 blank rows
 Checking the observational data
 
 ```{r}
-CR_ObsData <- read.csv("DataFiles/CR_PondAirTemp_mean.csv", header=TRUE)
+CR_ObsData <- read.csv("DataFiles/CopperRiver_CreatedFiles/CR_PondAirTemp_mean.csv", header=TRUE)
 head(CR_ObsData)
 
 # remove the first column here and change the column for Date to date
@@ -362,7 +362,7 @@ dim(YF_4.5) # 972 rows here, so need to make 972 blank rows
 Checking the observational data
 
 ```{r}
-YF_ObsData <- read.csv("DataFiles/YF_PondAirTemp_mean.csv", header=TRUE)
+YF_ObsData <- read.csv("DataFiles/YakutatForelands_CreatedFiles/YF_PondAirTemp_mean.csv", header=TRUE)
 head(YF_ObsData)
 
 # remove the first column here and change the column for Date to date
@@ -491,13 +491,13 @@ write.csv(YF_45Forecast, file = "YF_45SNAPForecast.csv")
 Determining the columns needed for this
 
 ```{r}
-CR_ObsData <- read.csv("DataFiles/CR_PondAirTemp_mean.csv", header=TRUE)
+CR_ObsData <- read.csv("DataFiles/CopperRiver_CreatedFiles/CR_PondAirTemp_mean.csv", header=TRUE)
 head(CR_ObsData)
 
 # remove the first column here and change the column for Date to date
   # Date is a function of some sort so could be the source of errors
 CR_ObsData <- CR_ObsData %>%
-  rename(date=Date)
+  dplyr::rename(date=Date)
 CR_ObsData <- CR_ObsData[,-1]
 head(CR_ObsData)
 
@@ -520,13 +520,13 @@ dim(CR_8.5) # 972 rows here, so need to make 972 blank rows
 Checking the observational data
 
 ```{r}
-CR_ObsData <- read.csv("DataFiles/CR_PondAirTemp_mean.csv", header=TRUE)
+CR_ObsData <- read.csv("DataFiles/CopperRiver_CreatedFiles/CR_PondAirTemp_mean.csv", header=TRUE)
 head(CR_ObsData)
 
 # remove the first column here and change the column for Date to date
   # Date is a function of some sort so could be the source of errors
 CR_ObsData <- CR_ObsData %>%
-  rename(date=Date)
+  dplyr::rename(date=Date)
 CR_ObsData <- CR_ObsData[,-1]
 head(CR_ObsData)
 
@@ -558,13 +558,13 @@ dim(YF_8.5) # 972 rows here, so need to make 972 blank rows
 Checking the observational data
 
 ```{r}
-YF_ObsData <- read.csv("DataFiles/YF_PondAirTemp_mean.csv", header=TRUE)
+YF_ObsData <- read.csv("DataFiles/YakutatForelands_CreatedFiles/YF_PondAirTemp_mean.csv", header=TRUE)
 head(YF_ObsData)
 
 # remove the first column here and change the column for Date to date
   # Date is a function of some sort so could be the source of errors
 YF_ObsData <- YF_ObsData %>%
-  rename(date=Date)
+  dplyr::rename(date=Date)
 YF_ObsData <- YF_ObsData[,-1]
 head(YF_ObsData)
 
