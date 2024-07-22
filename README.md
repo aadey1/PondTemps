@@ -28,12 +28,9 @@ What is the probability that ponds exceed the thermal threshold (CTmax) for salm
      Adding in all the raw data files in the PondTemps folder and organizing these
   2. Data file creation (monthly means for the temperature data)
      Getting the data entered into one file
-     Getting the ERA5 data incorporated (may wait on this and just use airport temps for now)
   3. Running the State-Space model
      Use code based on what Alyssa sent along for the examples
-  4. These were all run with SNAP data for SFS 2024 in Philly
-  5. Since have downloaded CORDEX data which is better defined
-     Goal is to rerun the SNAP analysis but with the CORDEX Dataa
+  4. These were all run with SNAP data
 
 # Code files here -- presented in the same order as the file folder
   1. 'ComparingAirportERA5Temps.Rmd' 
