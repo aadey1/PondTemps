@@ -1,0 +1,785 @@
+---
+title: "Pond Temps - Delta Graphs and Seasonal Trends"
+output: html_notebook
+---
+This is code used to make plots based on output from the "IndividualPondModels_Forecasts85" for boththe CR and YF
+Read in the output files for each pond/RCP combination then work on delta figures and figures like Hamlet et al. 2020
+
+```{r}
+library(dplyr)
+
+```
+
+Starting with the Copper River Delta
+
+RCP 85
+
+# Reading in the data
+```{r}
+BVSMod <- read.csv("BVSMod_85.csv", header=TRUE)
+BVSMod$date <- as.Date(BVSMod$date)
+
+CABMod <- read.csv("CABMod_85.csv", header=TRUE)
+CABMod$date <- as.Date(CABMod$date)
+
+CANMod <- read.csv("CANMod_85.csv", header=TRUE)
+CANMod$date <- as.Date(CANMod$date)
+
+EYSMod <- read.csv("EYSMod_85.csv", header=TRUE)
+EYSMod$date <- as.Date(EYSMod$date)
+
+RHMMod <- read.csv("RHMMod_85.csv", header=TRUE)
+RHMMod$date <- as.Date(RHMMod$date)
+
+SQRMod <- read.csv("SQRMod_85.csv", header=TRUE)
+SQRMod$date <- as.Date(SQRMod$date)
+
+TINMod <- read.csv("TINMod_85.csv", header=TRUE)
+TINMod$date <- as.Date(TINMod$date)
+
+TISMod <- read.csv("TISMod_85.csv", header=TRUE)
+TISMod$date <- as.Date(TISMod$date)
+
+WDDMod <- read.csv("WDDMod_85.csv", header=TRUE)
+WDDMod$date <- as.Date(WDDMod$date)
+```
+
+ 
+### 2012-2020
+```{r}
+# List of pond dataset names
+pond_names <- c("BVSMod", "CABMod", "CANMod", "EYSMod", "RHMMod", "SQRMod", "TINMod", "TISMod", "WDDMod")
+
+# Initialize an empty dataframe to store results
+avgX50_before_2021 <- data.frame(Pond = pond_names, Avg_X50_before_2021 = numeric(length(pond_names)))
+
+# Loop through each pond dataset
+for (i in seq_along(pond_names)) {
+  pond_name <- pond_names[i]
+  
+  # Read the CSV file and convert 'date' column to Date format
+  assign(pond_name, read.csv(paste0(pond_name, "_85.csv"), header=TRUE))
+  assign(paste0(pond_name, "$date"), as.Date(get(pond_name)$date))
+  
+  # Filter data for dates before January 1, 2021
+  filtered_data <- get(pond_name) %>%
+    filter(date < as.Date("2021-01-01"))
+  
+  # Calculate the mean of X50.
+  avg_X50 <- mean(filtered_data$X50., na.rm = TRUE)
+  
+  # Store the result in the dataframe
+  avgX50_before_2021[i, "Avg_X50_before_2021"] <- avg_X50
+}
+
+# Print the dataframe
+print(avgX50_before_2021)
+```
+
+### 2030-2039
+```{r}
+library(lubridate)
+
+# Initialize a list to store results
+results2030_2039 <- list()
+
+# Loop through each year from 2030 to 2039
+for (yr in 2030:2039) {
+  yearly_results <- list()
+  
+  # Loop through each pond dataset
+  for (pond_name in c("BVSMod", "CABMod", "CANMod", "EYSMod", "RHMMod", "SQRMod", "TINMod", "TISMod", "WDDMod")) {
+    pond_data <- get(pond_name)  # Fetch the dataset by name
+    
+    # Filter data for the current year
+    yearly_data <- pond_data %>%
+      filter(year(date) == yr)
+    
+    # Calculate the mean of X50. for the current year
+    yearly_mean <- mean(yearly_data$X50., na.rm = TRUE)
+    
+    # Store the result in the list
+    yearly_results[[pond_name]] <- yearly_mean
+  }
+  
+  # Store yearly results for the current year
+  results2030_2039[[as.character(yr)]] <- yearly_results
+}
+```
+
+### 2060-2069
+```{r}
+# Initialize a list to store results
+results2060_2069 <- list()
+
+# Loop through each year from 2060 to 2069
+for (yr in 2060:2069) {
+  yearly_results <- list()
+  
+  # Loop through each pond dataset
+  for (pond_name in c("BVSMod", "CABMod", "CANMod", "EYSMod", "RHMMod", "SQRMod", "TINMod", "TISMod", "WDDMod")) {
+    pond_data <- get(pond_name)  # Fetch the dataset by name
+    
+    # Filter data for the current year
+    yearly_data <- pond_data %>%
+      filter(year(date) == yr)
+    
+    # Calculate the mean of X50. for the current year
+    yearly_mean <- mean(yearly_data$X50., na.rm = TRUE)
+    
+    # Store the result in the list
+    yearly_results[[pond_name]] <- yearly_mean
+  }
+  
+  # Store yearly results for the current year
+  results2060_2069[[as.character(yr)]] <- yearly_results
+}
+```
+
+### 2090-2099
+```{r}
+# Initialize a list to store results
+results2090_2099 <- list()
+
+# Loop through each year from 2090 to 2099
+for (yr in 2090:2099) {
+  yearly_results <- list()
+  
+  # Loop through each pond dataset
+  for (pond_name in c("BVSMod", "CABMod", "CANMod", "EYSMod", "RHMMod", "SQRMod", "TINMod", "TISMod", "WDDMod")) {
+    pond_data <- get(pond_name)  # Fetch the dataset by name
+    
+    # Filter data for the current year
+    yearly_data <- pond_data %>%
+      filter(year(date) == yr)
+    
+    # Calculate the mean of X50. for the current year
+    yearly_mean <- mean(yearly_data$X50., na.rm = TRUE)
+    
+    # Store the result in the list
+    yearly_results[[pond_name]] <- yearly_mean
+  }
+  
+  # Store yearly results for the current year
+  results2090_2099[[as.character(yr)]] <- yearly_results
+}
+```
+
+# Put these values for 2030, 2060, and 2090 into the dataframe
+```{r}
+# List of pond dataset names
+pond_names <- c("BVSMod", "CABMod", "CANMod", "EYSMod", "RHMMod", "SQRMod", "TINMod", "TISMod", "WDDMod")
+
+# Initialize an empty dataframe to store results
+avgX50_table <- data.frame(Pond = pond_names)
+
+# Create columns for each year from 2030 to 2039, 2060 to 2069, and 2090 to 2099
+for (yr in c(2030:2039, 2060:2069, 2090:2099)) {
+  col_name <- paste0("Y", yr)  # Column name like "Y2030", "Y2031", etc.
+  avgX50_table[[col_name]] <- numeric(length(pond_names))  # Initialize column with zeros
+}
+
+# Loop through each pond dataset
+for (i in seq_along(pond_names)) {
+  pond_name <- pond_names[i]
+  
+  # Read the CSV file and convert 'date' column to Date format
+  assign(pond_name, read.csv(paste0(pond_name, "_85.csv"), header=TRUE))
+  assign(paste0(pond_name, "$date"), as.Date(get(pond_name)$date))
+  
+  # Loop through each year in the 2030s, 2060s, and 2090s
+  for (yr in c(2030:2039, 2060:2069, 2090:2099)) {
+    # Calculate mean X50 values for the current year and store in dataframe
+    avgX50_table[i, paste0("Y", yr)] <- mean(get(pond_name) %>%
+                                              filter(year(date) == yr) %>%
+                                              pull(X50.), na.rm = TRUE)
+  }
+}
+
+# Print the final table
+print(avgX50_table)
+
+```
+
+
+```{r}
+# List of pond dataset names
+pond_names <- c("BVS", "CAB", "CAN", "EYS", "RHM", "SQR", "TIN", "TIS", "WDD")
+
+# Initialize an empty dataframe to store results
+avgX50_table <- data.frame(Pond = pond_names)
+
+# Add column for Avg_X50_before_2021 as 2020
+avgX50_table$`2020` <- numeric(length(pond_names))
+
+# Create columns for each year from 2030 to 2039, 2060 to 2069, and 2090 to 2099
+years <- c(2030:2039, 2060:2069, 2090:2099)
+for (yr in years) {
+  col_name <- paste0("Y", yr)  # Column name like "Y2030", "Y2060", etc.
+  avgX50_table[[col_name]] <- numeric(length(pond_names))  # Initialize column with zeros
+}
+
+# Loop through each pond dataset
+for (i in seq_along(pond_names)) {
+  pond_name <- pond_names[i]
+  
+  # Read the CSV file and convert 'date' column to Date format
+  assign(pond_name, read.csv(paste0(pond_name, "Mod_85.csv"), header=TRUE))
+  assign(paste0(pond_name, "$date"), as.Date(get(pond_name)$date))
+  
+  # Calculate mean X50 values before 2021
+  avgX50_before_2021 <- mean(get(pond_name) %>%
+                              filter(date < as.Date("2021-01-01")) %>%
+                              pull(X50.), na.rm = TRUE)
+  
+  # Store mean X50 value before 2021 in avgX50_table as 2020
+  avgX50_table$`2020`[i] <- avgX50_before_2021
+  
+  # Loop through each year in the 2030s, 2060s, and 2090s
+  for (yr in years) {
+    # Calculate mean X50 values for the current year and store in dataframe
+    avgX50_table[i, paste0("Y", yr)] <- mean(get(pond_name) %>%
+                                              filter(year(date) == yr) %>%
+                                              pull(X50.), na.rm = TRUE)
+  }
+}
+
+# Print the final table
+print(avgX50_table)
+```
+
+## Remove the Y from each column name
+```{r}
+library(dplyr)
+
+# Function to remove 'Y' from column names
+remove_Y_prefix <- function(name) {
+  gsub("^Y", "", name)
+}
+
+# Apply the function to all column names
+avgX50_table <- avgX50_table %>%
+  rename_with(remove_Y_prefix, starts_with("Y"))
+
+# Print the structure of the updated dataframe
+str(avgX50_table)
+```
+
+
+# Calcuate the differences here as new columns in the dataframe
+```{r}
+# Assuming avgX50_table is loaded and structure verified
+Delta_CRD85 <- avgX50_table  # Use your actual dataframe
+
+# Columns to calculate differences for
+years <- c("2030", "2031", "2032", "2033", "2034", 
+           "2035", "2036", "2037", "2038", "2039", 
+           "2060", "2061", "2062", "2063", "2064", 
+           "2065", "2066", "2067", "2068", "2069", 
+           "2090", "2091", "2092", "2093", "2094", 
+           "2095", "2096", "2097", "2098", "2099")
+
+# Loop through each year and calculate the difference
+for (year in years) {
+  # Create a new column for the difference
+  diff_col_name <- paste0("diff_", year)
+  Delta_CRD85[[diff_col_name]] <- Delta_CRD85[[year]] - Delta_CRD85$`2020`
+}
+
+# Display the structure of Delta_CRD85 to verify
+str(Delta_CRD85)
+```
+
+#Calculate the mean differences
+
+```{r}
+library(dplyr)
+library(matrixStats)  # for rowMeans and rowSds functions
+
+# Selecting columns for the specified year ranges and calculating mean and standard deviation
+CRD85_selected <- Delta_CRD85 %>%
+  mutate(
+    Mean_2030_2039 = rowMeans(select(., starts_with("diff_"), matches("203[0-9]$"))),
+    SD_2030_2039 = rowSds(as.matrix(select(., starts_with("diff_"), matches("203[0-9]$")))),
+    Mean_2060_2069 = rowMeans(select(., starts_with("diff_"), matches("206[0-9]$"))),
+    SD_2060_2069 = rowSds(as.matrix(select(., starts_with("diff_"), matches("206[0-9]$")))),
+    Mean_2090_2099 = rowMeans(select(., starts_with("diff_"), matches("209[0-9]$"))),
+    SD_2090_2099 = rowSds(as.matrix(select(., starts_with("diff_"), matches("209[0-9]$"))))
+  )
+
+# Print the structure of the updated dataframe
+str(CRD85_selected)
+```
+
+## Put these into total mean/standard deviations
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+
+# Select and rename columns
+CRD85_decadal <- CRD85_selected %>%
+  select(Pond, starts_with("Mean_"), starts_with("SD_"))
+
+# Rename columns without the 'Y' prefix for means
+names(CRD85_decadal) <- sub("^Mean", "Mean", names(CRD85_decadal))
+
+# Rename columns without the 'Y' prefix for standard deviations
+names(CRD85_decadal) <- sub("^SD_", "SD_", names(CRD85_decadal))
+
+# Print the structure of the updated dataframe
+str(CRD85_decadal)
+```
+
+# Making the plots of these deltas
+```{r}
+# Load required packages
+library(ggplot2)
+library(gridExtra)
+library(ggpubr)
+
+# Create a grouped bar plot with error bars for Mean 2030
+plot_2030 <- ggplot(CRD85_decadal, aes(x = Pond, y = Mean_2030_2039)) +
+  geom_bar(stat = "identity", fill = "#FFD92F", color = "black") +
+  geom_errorbar(aes(ymin = Mean_2030_2039 - SD_2030_2039, ymax = Mean_2030_2039 + SD_2030_2039),
+                width = 0.4,  # Adjust the width of error bars as needed
+                position = position_dodge(width = 0.9)) +
+  labs(x = "", y = "Delta Temp (C)") +
+  ylim(-1, 12) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(plot.title = element_text(hjust = 0.5))  # Centered title
+plot_2030
+
+# Create a grouped bar plot with error bars for Mean 2060
+plot_2060 <- ggplot(CRD85_decadal, aes(x = Pond, y = Mean_2060_2069)) +
+  geom_bar(stat = "identity", fill = "#F46D43", color = "black") +
+  geom_errorbar(aes(ymin = Mean_2060_2069 - SD_2060_2069, ymax = Mean_2060_2069 + SD_2060_2069),
+                width = 0.4,  # Adjust the width of error bars as needed
+                position = position_dodge(width = 0.9)) +
+  labs(x = "", y = "") +  # No y-axis label
+  ylim(-1, 12) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(plot.title = element_text(hjust = 0.5)) +  # Centered title 
+  theme(axis.text.y = element_blank(),  # Remove Y-axis tick mark labels
+        axis.ticks.y = element_blank())   # Remove Y-axis ticks
+plot_2060
+
+# Create a grouped bar plot with error bars for Mean 2090
+plot_2090 <- ggplot(CRD85_decadal, aes(x = Pond, y = Mean_2090_2099)) +
+  geom_bar(stat = "identity", fill = "#D73027", color = "black") +
+  geom_errorbar(aes(ymin = Mean_2090_2099 - SD_2090_2099, ymax = Mean_2090_2099 + SD_2090_2099),
+                width = 0.4,  # Adjust the width of error bars as needed
+                position = position_dodge(width = 0.9)) +
+  labs(x = "", y = "") +  # No y-axis label
+  ylim(-1, 12) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(plot.title = element_text(hjust = 0.5)) +  # Centered title 
+  theme(axis.text.y = element_blank(),  # Remove Y-axis tick mark labels
+        axis.ticks.y = element_blank())   # Remove Y-axis ticks
+plot_2090
+
+# Combine plots into a panel plot
+Delta_CRD85_plot <- ggarrange(plot_2030, plot_2060, plot_2090, ncol = 3)
+
+# Save the combined plot
+ggsave("Output/SNAP/OriginalModel/Rerun/DeltaCRD85.png", plot = Delta_CRD85_plot, width = 8, height = 3)
+```
+
+# Statistical tests for each of these ponds for 2030s, 2060s, and 2090s
+
+### 2030s
+```{r}
+CRD85_selected
+
+# Load required libraries
+library(dplyr)
+library(broom)
+library(tidyr)
+
+# Step 1: Prepare the data
+data_long <- Delta_CRD85 %>%
+  select(Pond, matches("^diff_203[0-9]$")) %>%
+  pivot_longer(cols = -Pond, names_to = "Year", values_to = "Difference")
+
+boxplot(data_long$Difference ~ data_long$Pond)
+
+# Step 2: Conduct ANOVA by grouping by Pond
+res_CRD85 <- aov(Difference ~ Pond, data = data_long)
+summary(res_CRD85)
+
+# Step 3: Tukey HSD
+post_test_CRD85 <- TukeyHSD(res_CRD85)
+post_test_CRD85
+
+```
+
+### 2060s
+```{r}
+CRD85_selected
+
+# Load required libraries
+library(dplyr)
+library(broom)
+
+# Step 1: Prepare the data
+data_long <- Delta_CRD85 %>%
+  select(Pond, matches("^diff_206[0-9]$")) %>%
+  pivot_longer(cols = -Pond, names_to = "Year", values_to = "Difference")
+
+boxplot(data_long$Difference ~ data_long$Pond)
+
+# Step 2: Conduct ANOVA by grouping by Pond
+res_CRD85 <- aov(Difference ~ Pond, data = data_long)
+summary(res_CRD85)
+
+# Step 3: Tukey HSD
+post_test_CRD85 <- TukeyHSD(res_CRD85)
+post_test_CRD85
+```
+
+### 2090s
+```{r}
+CRD85_selected
+
+# Load required libraries
+library(dplyr)
+library(broom)
+
+# Step 1: Prepare the data
+data_long <- Delta_CRD85 %>%
+  select(Pond, matches("^diff_209[0-9]$")) %>%
+  pivot_longer(cols = -Pond, names_to = "Year", values_to = "Difference")
+
+boxplot(data_long$Difference ~ data_long$Pond)
+
+# Step 2: Conduct ANOVA by grouping by Pond
+res_CRD85 <- aov(Difference ~ Pond, data = data_long)
+summary(res_CRD85)
+
+# Step 3: Tukey HSD
+post_test_CRD85 <- TukeyHSD(res_CRD85)
+post_test_CRD85
+```
+
+# Making plots of error by season
+
+## 2012-2020
+```{r}
+# List of pond dataset names
+pond_names <- c("BVSMod", "CABMod", "CANMod", "EYSMod", "RHMMod", "SQRMod", "TINMod", "TISMod", "WDDMod")
+
+# Short names corresponding to pond_names
+short_names <- c("BVS", "CAB", "CAN", "EYS", "RHM", "SQR", "TIN", "TIS", "WDD")
+
+# Initialize an empty dataframe to store monthly mean results
+monthly_means <- data.frame(Pond = character(), Month = character(), AvgTemp = numeric(), stringsAsFactors = FALSE)
+
+# Loop through each pond dataset
+for (i in seq_along(pond_names)) {
+  pond_name <- pond_names[i]
+  short_name <- short_names[i]  # Get corresponding short name
+  
+  # Read the CSV file
+  pond_data <- read.csv(paste0(pond_name, "_85.csv"), header=TRUE)
+  
+  # Convert 'date' column to Date class
+  pond_data$date <- as.Date(pond_data$date)
+  
+  # Loop through each month
+  for (month in month.name) {
+    # Filter data for the current month
+    filtered_data <- subset(pond_data, format(date, "%B") == month | format(date, "%b") == month)
+    
+    # Calculate the mean of X50 for the current month
+    avg_X50 <- mean(filtered_data$X50., na.rm = TRUE)
+    
+    # Append results to monthly_means dataframe
+    monthly_means <- rbind(monthly_means, data.frame(Pond = short_name, Month = month, AvgTemp = avg_X50, Year = 2020))
+  }
+}
+
+# Print the monthly means dataframe
+print(monthly_means)
+
+```
+## 2030, 2060, and 2090
+```{r}
+# List of pond dataset names with "Mod" suffix
+pond_names_mod <- c("BVSMod", "CABMod", "CANMod", "EYSMod", "RHMMod", "SQRMod", "TINMod", "TISMod", "WDDMod")
+
+# Desired short names for the ponds
+short_names <- c("BVS", "CAB", "CAN", "EYS", "RHM", "SQR", "TIN", "TIS", "WDD")
+
+# Initialize empty dataframes to store results
+monthly_avgX50_table_2030s <- data.frame(Pond = character(), Month = character(), AvgTemp = numeric(), Year = integer(), stringsAsFactors = FALSE)
+monthly_avgX50_table_2060s <- data.frame(Pond = character(), Month = character(), AvgTemp = numeric(), Year = integer(), stringsAsFactors = FALSE)
+monthly_avgX50_table_2090s <- data.frame(Pond = character(), Month = character(), AvgTemp = numeric(), Year = integer(), stringsAsFactors = FALSE)
+
+# Function to calculate monthly averages from yearly results
+calculate_monthly_averages <- function(results_list, decade_start, decade_end, pond_names, short_names) {
+  # Initialize empty dataframe to store monthly averages
+  monthly_avg_table <- data.frame(Pond = character(), Month = character(), AvgTemp = numeric(), Year = integer(), stringsAsFactors = FALSE)
+  
+  # Loop through each year in the decade
+  for (yr in decade_start:decade_end) {
+    yearly_results <- results_list[[as.character(yr)]]
+    
+    # Loop through each pond dataset
+    for (i in seq_along(pond_names)) {
+      pond_name_mod <- pond_names[i]
+      pond_name <- short_names[i]
+      
+      avg_X50 <- yearly_results[[pond_name_mod]]
+      
+      # Loop through each month
+      for (month in month.name) {
+        # Filter data for the current year and month
+        monthly_data <- pond_data %>%
+          filter(year(date) == yr & format(date, "%B") == month)
+        
+        # Calculate the mean of X50. for the current month
+        if (nrow(monthly_data) > 0) {
+          avg_temp <- mean(monthly_data$X50., na.rm = TRUE)
+        } else {
+          avg_temp <- NA
+        }
+        
+        # Append results to monthly_avg_table dataframe
+        monthly_avg_table <- rbind(monthly_avg_table, data.frame(Pond = pond_name, Month = month, AvgTemp = avg_temp, Year = yr))
+      }
+    }
+  }
+  
+  return(monthly_avg_table)
+}
+
+# Calculate monthly averages for each decade
+monthly_avgX50_table_2030s <- calculate_monthly_averages(results2030_2039, 2030, 2039, pond_names_mod, short_names)
+monthly_avgX50_table_2060s <- calculate_monthly_averages(results2060_2069, 2060, 2069, pond_names_mod, short_names)
+monthly_avgX50_table_2090s <- calculate_monthly_averages(results2090_2099, 2090, 2099, pond_names_mod, short_names)
+
+# Print the results for each decade
+print("Monthly Average X50 for the 2030s:")
+print(monthly_avgX50_table_2030s)
+
+print("Monthly Average X50 for the 2060s:")
+print(monthly_avgX50_table_2060s)
+
+print("Monthly Average X50 for the 2090s:")
+print(monthly_avgX50_table_2090s)
+```
+# Combine all the monthly average tables into one dataframe 
+
+```{r}
+# Combine all monthly average tables into one dataframe
+combined_monthly_avg <- bind_rows(
+  monthly_means,
+  monthly_avgX50_table_2030s,
+  monthly_avgX50_table_2060s,
+  monthly_avgX50_table_2090s
+)
+combined_monthly_avg
+```
+
+# Calculate the differences here as compared to 2020
+```{r}
+# Define columns (months)
+months <- unique(combined_monthly_avg$Month)
+
+# Reference year
+reference_year <- 2020
+
+# Loop through each month and calculate the difference
+for (month in months) {
+  # Subset data for the current month
+  month_data <- combined_monthly_avg[combined_monthly_avg$Month == month, ]
+  
+  # Calculate the difference relative to the reference year
+  combined_monthly_avg$diff_AvgTemp[combined_monthly_avg$Month == month] <- month_data$AvgTemp - month_data$AvgTemp[month_data$Year == reference_year]
+}
+
+# Display the structure of combined_monthly_avg to verify
+str(combined_monthly_avg)
+
+DeltaMonthly_CRD85 <- combined_monthly_avg %>%
+  filter(Year != 2020)
+DeltaMonthly_CRD85
+```
+
+# Calculate mean differences
+
+```{r}
+library(dplyr)
+
+DeltaMonthly_CRD85
+
+DiffMonthly_CRD85 <- DeltaMonthly_CRD85 %>%
+  select(Pond, Month, Year, diff_AvgTemp)
+
+# Create a new column based on year ranges
+DiffMonthly_CRD85$Decade <- ifelse(DiffMonthly_CRD85$Year >= 2030 & DiffMonthly_CRD85$Year < 2040, "2030s",
+                          ifelse(DiffMonthly_CRD85$Year >= 2060 & DiffMonthly_CRD85$Year < 2070, "2060s",
+                          ifelse(DiffMonthly_CRD85$Year >= 2090 & DiffMonthly_CRD85$Year < 2100, "2090s",
+                          "Other")))
+
+# Print the updated data frame
+print(DiffMonthly_CRD85)
+  
+# Convert Month to Date type
+DiffMonthly_CRD85 <- DiffMonthly_CRD85 %>%
+  mutate(Month = as.Date(paste0(Month, " 1 ", Year), format = "%B %d %Y"))
+
+print(DiffMonthly_CRD85)
+
+# Group by Pond and Month, then calculate mean and standard deviation of diff_AvgTemp
+summary_stats <- DiffMonthly_CRD85 %>%
+  dplyr::mutate(Month = format(Month, "%m")) %>%  # Extracts YYYY-MM format
+  dplyr::group_by(Pond, Month, Decade) %>%
+  dplyr::summarise(
+    mean_diff_AvgTemp = mean(diff_AvgTemp, na.rm = TRUE),
+    sd_diff_AvgTemp = sd(diff_AvgTemp, na.rm = TRUE)
+  )
+
+# View the summary statistics
+print(summary_stats)
+
+# Group by just Month, then calculate mean and standard deviation of diff_AvgTemp
+summary_stats2 <- DiffMonthly_CRD85 %>%
+  dplyr::mutate(Month = format(Month, "%m")) %>%  # Extracts YYYY-MM format
+  dplyr::group_by(Month, Decade) %>%
+  dplyr::summarise(
+    mean_diff_AvgTemp = mean(diff_AvgTemp, na.rm = TRUE),
+    sd_diff_AvgTemp = sd(diff_AvgTemp, na.rm = TRUE)
+  )
+
+# View the summary statistics
+print(summary_stats2)
+```
+
+Plotting the monthly temperature change graphs
+
+2030s
+```{r}
+summary_stats # grouped by month and pond
+summary_stats2 # grouped by just month
+
+# testing out plots
+
+# 2. Monthly averages across ponds
+MonthlyStats_2030 <- summary_stats2 %>%
+  filter(Decade == "2030s") 
+
+ggplot(data = MonthlyStats_2030, aes(x = Month)) +
+  geom_point(aes(y = mean_diff_AvgTemp)) +
+  theme_classic()
+
+# Convert Month from character to numeric to ensure proper ordering in ggplot
+MonthlyStats_2030$Month <- as.numeric(MonthlyStats_2030$Month)
+
+# Plot using ggplot
+MonthlyStats_2030Plot <- ggplot(data = MonthlyStats_2030, aes(x = Month)) +
+  geom_line(aes(y = mean_diff_AvgTemp)) +  # Point plot with mean values
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +  # Horizontal dashed line at y = 0
+  geom_ribbon(aes(ymin = mean_diff_AvgTemp - sd_diff_AvgTemp, ymax = mean_diff_AvgTemp + sd_diff_AvgTemp), fill = "red", alpha = 0.3) +  # Ribbon for positive and negative error based on sd values
+  scale_x_continuous(breaks = 1:12, labels = month.abb) +  # Adjust x-axis labels to show month abbreviations
+  ylim(-4,6)+
+  theme_classic() +
+  labs(x = "", y = "Delta Temp (C)") +
+  theme(axis.text.x = element_text(angle = 65, hjust = 1)) +
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+MonthlyStats_2030Plot
+```
+
+2060s
+```{r}
+# 2. Monthly averages across ponds
+MonthlyStats_2060 <- summary_stats2 %>%
+  filter(Decade == "2060s") 
+
+ggplot(data = MonthlyStats_2060, aes(x = Month)) +
+  geom_point(aes(y = mean_diff_AvgTemp)) +
+  theme_classic()
+
+# Convert Month from character to numeric to ensure proper ordering in ggplot
+MonthlyStats_2060$Month <- as.numeric(MonthlyStats_2060$Month)
+
+# Plot using ggplot
+MonthlyStats_2060Plot <- ggplot(data = MonthlyStats_2060, aes(x = Month)) +
+  geom_line(aes(y = mean_diff_AvgTemp)) +  # Point plot with mean values
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +  # Horizontal dashed line at y = 0
+  geom_ribbon(aes(ymin = mean_diff_AvgTemp - sd_diff_AvgTemp, ymax = mean_diff_AvgTemp + sd_diff_AvgTemp), fill = "red", alpha = 0.3) +  # Ribbon for positive and negative error based on sd values
+  scale_x_continuous(breaks = 1:12, labels = month.abb) +  # Adjust x-axis labels to show month abbreviations
+  ylim(-4,6)+
+  theme_classic() +
+  labs(x = "", y = "") +
+  theme(axis.text.x = element_text(angle = 65, hjust = 1)) +
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))+
+  theme(axis.text.y = element_blank(),  # Remove Y-axis tick mark labels
+        axis.ticks.y = element_blank())
+MonthlyStats_2060Plot
+```
+2090s
+```{r}
+# 2. Monthly averages across ponds
+MonthlyStats_2090 <- summary_stats2 %>%
+  filter(Decade == "2090s") 
+
+ggplot(data = MonthlyStats_2090, aes(x = Month)) +
+  geom_point(aes(y = mean_diff_AvgTemp)) +
+  theme_classic()
+
+# Convert Month from character to numeric to ensure proper ordering in ggplot
+MonthlyStats_2090$Month <- as.numeric(MonthlyStats_2090$Month)
+
+# Plot using ggplot
+MonthlyStats_2090Plot <- ggplot(data = MonthlyStats_2090, aes(x = Month)) +
+  geom_line(aes(y = mean_diff_AvgTemp)) +  # Point plot with mean values
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +  # Horizontal dashed line at y = 0
+  geom_ribbon(aes(ymin = mean_diff_AvgTemp - sd_diff_AvgTemp, ymax = mean_diff_AvgTemp + sd_diff_AvgTemp), fill = "red", alpha = 0.3) +  # Ribbon for positive and negative error based on sd values
+  scale_x_continuous(breaks = 1:12, labels = month.abb) +  # Adjust x-axis labels to show month abbreviations
+  ylim(-4,6)+
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 65, hjust = 1)) +
+  labs(x = "", y = "") +
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))+
+  theme(axis.text.y = element_blank(),  # Remove Y-axis tick mark labels
+        axis.ticks.y = element_blank())
+MonthlyStats_2090Plot
+```
+
+Combine the plots together here for now
+```{r}
+# Combine plots into a panel plot
+DeltaMonth_CRD85_plot <- ggarrange(MonthlyStats_2030Plot, MonthlyStats_2060Plot, MonthlyStats_2090Plot, ncol = 3)
+
+# Save the combined plot
+ggsave("Output/SNAP/OriginalModel/Rerun/DeltaMonthCRD85.png", plot = DeltaMonth_CRD85_plot, width = 12, height = 3)
+
+```
+
+Create .csv files of the data for these graphs
+```{r}
+write.csv(MonthlyStats_2030, file = "MonthlyStatsCRD85_2030.csv")
+write.csv(MonthlyStats_2060, file = "MonthlyStatsCRD85_2060.csv")
+write.csv(MonthlyStats_2090, file = "MonthlyStatsCRD85_2090.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
