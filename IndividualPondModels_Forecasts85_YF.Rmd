@@ -32,7 +32,7 @@ library(ggplot2)
 ## Start by loading in the Yakutat Forelands mean data set
 
 ```{r}
-YF_Temps <- read.csv("DataFiles/YF_85Forecast.csv", header=TRUE)
+YF_Temps <- read.csv("DataFiles/YF_85SNAPForecast.csv", header=TRUE)
 
 library(dplyr)
 # remove the first column here and change the column for Date to date
@@ -45,10 +45,10 @@ head(YF_Temps)
 
 ```{r}
 YF_AirTemp <- YF_Temps %>%
-  select(date, Airport, Air_MonthAvg, std, precision, Region)
+  dplyr::select(date, Airport, Air_MonthAvg, std, precision, Region)
 
 YF_WaterTemp <- YF_Temps %>%
-  select(date, std, precision, MP1, MP3, PL3, PL2, UBP3, MP5, MP8, UBP1, UBP2, PL1, UBP4)
+  select(date, MP1, MP3, PL3, PL2, UBP3, MP5, MP8, UBP1, UBP2, PL1, UBP4)
 ```
 
 ## Going to attempt to plot the water temperature and the air temperature over time
@@ -86,12 +86,12 @@ YF_PondTemp <- ggplot(YF_Temps_long, aes(x = as.Date(date), y = value, color = v
        x = "Date",
        y = "Value",
        color = "Variable") +
-  theme_classic()
+  theme_minimal()
 YF_PondTemp
 
 
 # Save the plot
-ggsave("Plots/YF_PondTemp.png", plot = YF_PondTemp, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/YF_PondTemp.png", plot = YF_PondTemp, width = 8, height = 6)
 
 ```
 
@@ -119,11 +119,8 @@ y <- YF_WaterTemp$MP1
 length(y)
 
 # Pull out the air temperature from the data
-tempMean <- YF_AirTemp$Air_MonthAvg
-length(tempMean)
-
-tempPrecision <- YF_AirTemp$precision
-length(tempPrecision)
+temp <- YF_AirTemp$Air_MonthAvg
+length(temp)
 ```
 
 The code itself has three components, the data model, the process model, and the priors.
@@ -149,7 +146,7 @@ model{
   
   #### Process Model
   for(t in 2:n){
-    x[t]~dnorm(k[t],tau_add)
+    x[t] ~ dnorm(k[t],tau_add)
     k[t] <- beta0[1] + beta0[2] * temp[t]
   }
   
@@ -168,7 +165,7 @@ model{
 data <- list(y=y,n=length(y),     ## data
              x_ic=0,tau_ic=0.2,
              betap=c(1,1), sigmap=diag(0.0001, 2, 2),
-             temp = temp, 
+             temp = temp, ## initial condition prior
              a_obs=1,r_obs=1,           ## obs error prior
              a_add=1,r_add=1            ## process error prior
              )
@@ -222,7 +219,6 @@ jags.out   <- coda.samples (model = j.model,
 ### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
 
 ```{r}
-# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
 time                               ## adjust to zoom in and out
 time <-as.Date(time)
 out <- as.matrix(jags.out)         ## convert from coda to matrix
@@ -254,44 +250,74 @@ MP1ModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = MP1)) +
-  ggtitle("MP1 - Yakutat Forelands - RCP 8.5")+
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 MP1ModelPlot
 
 MP1ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
   geom_line(mapping = aes(y = `97.5%`)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = MP1)) +
-  ggtitle("MP1 - Yakutat Forelands - RCP 8.5")+
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 MP1ModelErrorPlot
 
-MP1ModelMeanPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+ggsave("Output/SNAP/OriginalModel/Rerun/MP1_85_ModelPlot.jpeg", plot = MP1ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP1_85_ModelErrorPlot.jpeg", plot = MP1ModelErrorPlot, width = 8, height = 6)
+```
+
+## Calculating the NSE (Nash-Sutcliffe efficiency) between our modeled/simulated values and the observations
+```{r}
+MP1Mod <- GraphDataOutputCheck
+write.csv(MP1Mod, file = "MP1Mod_85.csv", row.names = F)
+
+MP1_NSE <- NSE(MP1Mod$`50%`, GraphDataOutputCheck$MP1, na.rm = TRUE)
+MP1_NSE
+
+# filter to data before 2020 for the obs graph?
+MP1Mod_total <- MP1Mod
+
+MP1Mod <- MP1Mod %>%
+  filter(date < "2021-01-01")
+range(MP1Mod$date)
+avgMP12010 <- mean(MP1Mod$`50%`)
+avgMP12010
+stdMP12010 <- sd(MP1Mod$`50%`)
+stdMP12010
+
+MP1ModelErrorPlot <- ggplot(MP1Mod, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
   geom_line(mapping = aes(y = `97.5%`)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = MP1)) +
-  ggtitle("MP1 - Yakutat Forelands - RCP 8.5")+
+  ggtitle("MP1 - Yakutat Forelands")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.870")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
-MP1ModelMeanPlot
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+MP1ModelErrorPlot
 
-ggsave("Plots/MP1_85_ModelPlot.jpeg", plot = MP1ModelPlot, width = 8, height = 6)
-ggsave("Plots/MP1_85_ModelErrorPlot.jpeg", plot = MP1ModelErrorPlot, width = 8, height = 6)
-ggsave("Plots/MP1_85_ModelMeanPlot.jpeg", plot = MP1ModelMeanPlot, with = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP1_ObsModelPlot_85.jpeg", plot = MP1ModelErrorPlot, width = 8, height = 6)
+
 ```
 
 ####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
@@ -301,6 +327,10 @@ ggsave("Plots/MP1_85_ModelMeanPlot.jpeg", plot = MP1ModelMeanPlot, with = 8, hei
 # filtering for 2030s
 MP1_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
+avgMP12030 <- mean(MP1_2030$`50%`)
+avgMP12030
+stdMP12030 <- sd(MP1_2030$`50%`)
+stdMP12030
 
 # Now you can use this data frame with ggplot2
 MP1_2030_ModelPlot <- ggplot(MP1_2030) +
@@ -320,6 +350,7 @@ MP1_2030_ModelErrorPlot <- ggplot(MP1_2030, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
   geom_line(mapping = aes(y = `97.5%`)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = MP1)) +
   ggtitle("MP1 - Yakutat Forelands - RCP 8.5")+
   ylim(c(-10, 30))+
@@ -329,8 +360,8 @@ MP1_2030_ModelErrorPlot <- ggplot(MP1_2030, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 MP1_2030_ModelErrorPlot
 
-ggsave("Plots/MP1_2030_85_ModelPlot.jpeg", plot = MP1_2030_ModelPlot, width = 8, height = 6)
-ggsave("Plots/MP1_2030_85_ModelErrorPlot.jpeg", plot = MP1_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP1_2030_85_ModelPlot.jpeg", plot = MP1_2030_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP1_2030_85_ModelErrorPlot.jpeg", plot = MP1_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -338,6 +369,10 @@ ggsave("Plots/MP1_2030_85_ModelErrorPlot.jpeg", plot = MP1_2030_ModelErrorPlot, 
 # filtering for 2030s
 MP1_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
+avgMP12060 <- mean(MP1_2060$`50%`)
+avgMP12060
+stdMP12060 <- sd(MP1_2060$`50%`)
+stdMP12060
 
 # Now you can use this data frame with ggplot2
 MP1_2060_ModelPlot <- ggplot(MP1_2060) +
@@ -367,8 +402,8 @@ MP1_2060_ModelErrorPlot <- ggplot(MP1_2060, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 MP1_2060_ModelErrorPlot
 
-ggsave("Plots/MP1_2060_85_ModelPlot.jpeg", plot = MP1_2060_ModelPlot, width = 8, height = 6)
-ggsave("Plots/MP1_2060_85_ModelErrorPlot.jpeg", plot = MP1_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP1_2060_85_ModelPlot.jpeg", plot = MP1_2060_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP1_2060_85_ModelErrorPlot.jpeg", plot = MP1_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -376,6 +411,10 @@ ggsave("Plots/MP1_2060_85_ModelErrorPlot.jpeg", plot = MP1_2060_ModelErrorPlot, 
 # filtering for 2030s
 MP1_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
+avgMP12090 <- mean(MP1_2090$`50%`)
+avgMP12090
+stdMP12090 <- sd(MP1_2090$`50%`)
+stdMP12090
 
 # Now you can use this data frame with ggplot2
 MP1_2090_ModelPlot <- ggplot(MP1_2090) +
@@ -405,8 +444,8 @@ MP1_2090_ModelErrorPlot <- ggplot(MP1_2090, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 MP1_2090_ModelErrorPlot
 
-ggsave("Plots/MP1_2090_85_ModelPlot.jpeg", plot = MP1_2090_ModelPlot, width = 8, height = 6)
-ggsave("Plots/MP1_2090_85_ModelErrorPlot.jpeg", plot = MP1_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP1_2090_85_ModelPlot.jpeg", plot = MP1_2090_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP1_2090_85_ModelErrorPlot.jpeg", plot = MP1_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # MP3
@@ -455,7 +494,7 @@ model{
   
   #### Process Model
   for(t in 2:n){
-    x[t]~dnorm(k[t],tau_add)
+    x[t] ~ dnorm(k[t],tau_add)
     k[t] <- beta0[1] + beta0[2] * temp[t]
   }
   
@@ -528,7 +567,6 @@ jags.out   <- coda.samples (model = j.model,
 ### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
 
 ```{r}
-# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
 time                               ## adjust to zoom in and out
 time <-as.Date(time)
 out <- as.matrix(jags.out)         ## convert from coda to matrix
@@ -560,12 +598,14 @@ MP3ModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = MP3)) +
-  ggtitle("MP3 - Yakutat Forelands - RCP 8.5")+
-  ylim(-10,30)+
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 MP3ModelPlot
 
 MP3ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -574,16 +614,58 @@ MP3ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = MP3)) +
-  ggtitle("MP3 - Yakutat Forelands - RCP 8.5")+
-  ylim(-10,30)+
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 MP3ModelErrorPlot
 
-ggsave("Plots/MP3_85_ModelPlot.jpeg", plot = MP3ModelPlot, width = 8, height = 6)
-ggsave("Plots/MP3_85_ModelErrorPlot.jpeg", plot = MP3ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP3_85_ModelPlot.jpeg", plot = MP3ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP3_85_ModelErrorPlot.jpeg", plot = MP3ModelErrorPlot, width = 8, height = 6)
+```
+
+## Calculating the NSE (Nash-Sutcliffe efficiency) between our modeled/simulated values and the observations
+```{r}
+MP3Mod <- GraphDataOutputCheck
+write.csv(MP3Mod, file = "MP3Mod_85.csv", row.names = F)
+
+MP3_NSE <- NSE(MP3Mod$`50%`, GraphDataOutputCheck$MP3, na.rm = TRUE)
+MP3_NSE
+
+# filter to data before 2020 for the obs graph?
+MP3Mod_total <- MP3Mod
+
+MP3Mod <- MP3Mod %>%
+  filter(date < "2021-01-01")
+range(MP3Mod$date)
+avgMP32010 <- mean(MP3Mod$`50%`)
+avgMP32010
+stdMP32010 <- sd(MP3Mod$`50%`)
+stdMP32010
+
+MP3ModelErrorPlot <- ggplot(MP3Mod, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = MP3)) +
+  ggtitle("MP3 - Yakutat Forelands")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.957")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+MP3ModelErrorPlot
+
+ggsave("Output/SNAP/OriginalModel/Rerun/MP3_ObsModelPlot_85.jpeg", plot = MP3ModelErrorPlot, width = 8, height = 6)
+
 ```
 
 ####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
@@ -593,6 +675,10 @@ ggsave("Plots/MP3_85_ModelErrorPlot.jpeg", plot = MP3ModelErrorPlot, width = 8, 
 # filtering for 2030s
 MP3_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
+avgMP32030 <- mean(MP3_2030$`50%`)
+avgMP32030
+stdMP32030 <- sd(MP3_2030$`50%`)
+stdMP32030
 
 # Now you can use this data frame with ggplot2
 MP3_2030_ModelPlot <- ggplot(MP3_2030) +
@@ -622,8 +708,8 @@ MP3_2030_ModelErrorPlot <- ggplot(MP3_2030, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 MP3_2030_ModelErrorPlot
 
-ggsave("Plots/MP3_2030_85_ModelPlot.jpeg", plot = MP3_2030_ModelPlot, width = 8, height = 6)
-ggsave("Plots/MP3_2030_85_ModelErrorPlot.jpeg", plot = MP3_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP3_2030_85_ModelPlot.jpeg", plot = MP3_2030_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP3_2030_85_ModelErrorPlot.jpeg", plot = MP3_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -631,13 +717,17 @@ ggsave("Plots/MP3_2030_85_ModelErrorPlot.jpeg", plot = MP3_2030_ModelErrorPlot, 
 # filtering for 2030s
 MP3_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
+avgMP32060 <- mean(MP3_2060$`50%`)
+avgMP32060
+stdMP32060 <- sd(MP3_2060$`50%`)
+stdMP32060
 
 # Now you can use this data frame with ggplot2
 MP3_2060_ModelPlot <- ggplot(MP3_2060) +
   geom_line(aes(x = date, y = `50%`)) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
-  geom_point(aes(x = date, y = MP1)) +
+  geom_point(aes(x = date, y = MP3)) +
   ggtitle("MP3 - Yakutat Forelands - RCP 8.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
@@ -651,7 +741,7 @@ MP3_2060_ModelErrorPlot <- ggplot(MP3_2060, mapping = aes(date)) +
   geom_line(mapping = aes(y = `97.5%`)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
-  geom_point(aes(x = date, y = MP1)) +
+  geom_point(aes(x = date, y = MP3)) +
   ggtitle("MP3 - Yakutat Forelands - RCP 8.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
@@ -660,8 +750,8 @@ MP3_2060_ModelErrorPlot <- ggplot(MP3_2060, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 MP3_2060_ModelErrorPlot
 
-ggsave("Plots/MP3_2060_85_ModelPlot.jpeg", plot = MP3_2060_ModelPlot, width = 8, height = 6)
-ggsave("Plots/MP3_2060_85_ModelErrorPlot.jpeg", plot = MP3_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP3_2060_85_ModelPlot.jpeg", plot = MP3_2060_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP3_2060_85_ModelErrorPlot.jpeg", plot = MP3_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -669,13 +759,17 @@ ggsave("Plots/MP3_2060_85_ModelErrorPlot.jpeg", plot = MP3_2060_ModelErrorPlot, 
 # filtering for 2030s
 MP3_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
+avgMP32090 <- mean(MP3_2090$`50%`)
+avgMP32090
+stdMP32090 <- sd(MP3_2090$`50%`)
+stdMP32090
 
 # Now you can use this data frame with ggplot2
 MP3_2090_ModelPlot <- ggplot(MP3_2090) +
   geom_line(aes(x = date, y = `50%`)) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
-  geom_point(aes(x = date, y = MP1)) +
+  geom_point(aes(x = date, y = MP3)) +
   ggtitle("MP3 - Yakutat Forelands - RCP 8.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
@@ -689,7 +783,7 @@ MP3_2090_ModelErrorPlot <- ggplot(MP3_2090, mapping = aes(date)) +
   geom_line(mapping = aes(y = `97.5%`)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
-  geom_point(aes(x = date, y = MP1)) +
+  geom_point(aes(x = date, y = MP3)) +
   ggtitle("MP3 - Yakutat Forelands - RCP 8.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
@@ -698,8 +792,8 @@ MP3_2090_ModelErrorPlot <- ggplot(MP3_2090, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 MP3_2090_ModelErrorPlot
 
-ggsave("Plots/MP3_2090_85_ModelPlot.jpeg", plot = MP3_2090_ModelPlot, width = 8, height = 6)
-ggsave("Plots/MP3_2090_85_ModelErrorPlot.jpeg", plot = MP3_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP3_2090_85_ModelPlot.jpeg", plot = MP3_2090_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP3_2090_85_ModelErrorPlot.jpeg", plot = MP3_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # MP5
@@ -748,7 +842,7 @@ model{
   
   #### Process Model
   for(t in 2:n){
-    x[t]~dnorm(k[t],tau_add)
+    x[t] ~ dnorm(k[t],tau_add)
     k[t] <- beta0[1] + beta0[2] * temp[t]
   }
   
@@ -821,7 +915,6 @@ jags.out   <- coda.samples (model = j.model,
 ### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
 
 ```{r}
-# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
 time                               ## adjust to zoom in and out
 time <-as.Date(time)
 out <- as.matrix(jags.out)         ## convert from coda to matrix
@@ -853,12 +946,14 @@ MP5ModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = MP5)) +
-  ggtitle("MP5 - Yakutat Forelands - RCP 8.5")+
-  ylim(-10,30)+
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 MP5ModelPlot
 
 MP5ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -867,16 +962,58 @@ MP5ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = MP5)) +
-  ggtitle("MP5 - Yakutat Forelands - RCP 8.5")+
-  ylim(-10,30)+
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 MP5ModelErrorPlot
 
-ggsave("Plots/MP5_85_ModelPlot.jpeg", plot = MP5ModelPlot, width = 8, height = 6)
-ggsave("Plots/MP5_85_ModelErrorPlot.jpeg", plot = MP5ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP5_85_ModelPlot.jpeg", plot = MP5ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP5_85_ModelErrorPlot.jpeg", plot = MP5ModelErrorPlot, width = 8, height = 6)
+```
+
+## Calculating the NSE (Nash-Sutcliffe efficiency) between our modeled/simulated values and the observations
+```{r}
+MP5Mod <- GraphDataOutputCheck
+write.csv(MP5Mod, file = "MP5Mod_85.csv", row.names = F)
+
+MP5_NSE <- NSE(MP5Mod$`50%`, GraphDataOutputCheck$MP5, na.rm = TRUE)
+MP5_NSE
+
+# filter to data before 2020 for the obs graph?
+MP5Mod_total <- MP5Mod
+
+MP5Mod <- MP5Mod %>%
+  filter(date < "2021-01-01")
+range(MP5Mod$date)
+avgMP52010 <- mean(MP5Mod$`50%`)
+avgMP52010
+stdMP52010 <- sd(MP5Mod$`50%`)
+stdMP52010
+
+MP5ModelErrorPlot <- ggplot(MP5Mod, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = MP5)) +
+  ggtitle("MP5 - Yakutat Forelands")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.975")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+MP5ModelErrorPlot
+
+ggsave("Output/SNAP/OriginalModel/Rerun/MP5_ObsModelPlot_85.jpeg", plot = MP5ModelErrorPlot, width = 8, height = 6)
+
 ```
 
 ####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
@@ -886,6 +1023,10 @@ ggsave("Plots/MP5_85_ModelErrorPlot.jpeg", plot = MP5ModelErrorPlot, width = 8, 
 # filtering for 2030s
 MP5_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
+avgMP52030 <- mean(MP5_2030$`50%`)
+avgMP52030
+stdMP52030 <- sd(MP5_2030$`50%`)
+stdMP52030
 
 # Now you can use this data frame with ggplot2
 MP5_2030_ModelPlot <- ggplot(MP5_2030) +
@@ -915,8 +1056,8 @@ MP5_2030_ModelErrorPlot <- ggplot(MP5_2030, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 MP5_2030_ModelErrorPlot
 
-ggsave("Plots/MP5_2030_85_ModelPlot.jpeg", plot = MP5_2030_ModelPlot, width = 8, height = 6)
-ggsave("Plots/MP5_2030_85_ModelErrorPlot.jpeg", plot = MP5_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP5_2030_85_ModelPlot.jpeg", plot = MP5_2030_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP5_2030_85_ModelErrorPlot.jpeg", plot = MP5_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -924,6 +1065,10 @@ ggsave("Plots/MP5_2030_85_ModelErrorPlot.jpeg", plot = MP5_2030_ModelErrorPlot, 
 # filtering for 2030s
 MP5_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
+avgMP52060 <- mean(MP5_2060$`50%`)
+avgMP52060
+stdMP52060 <- sd(MP5_2060$`50%`)
+stdMP52060
 
 # Now you can use this data frame with ggplot2
 MP5_2060_ModelPlot <- ggplot(MP5_2060) +
@@ -953,8 +1098,8 @@ MP5_2060_ModelErrorPlot <- ggplot(MP5_2060, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 MP5_2060_ModelErrorPlot
 
-ggsave("Plots/MP5_2060_85_ModelPlot.jpeg", plot = MP5_2060_ModelPlot, width = 8, height = 6)
-ggsave("Plots/MP5_2060_85_ModelErrorPlot.jpeg", plot = MP5_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP5_2060_85_ModelPlot.jpeg", plot = MP5_2060_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP5_2060_85_ModelErrorPlot.jpeg", plot = MP5_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -962,6 +1107,10 @@ ggsave("Plots/MP5_2060_85_ModelErrorPlot.jpeg", plot = MP5_2060_ModelErrorPlot, 
 # filtering for 2030s
 MP5_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
+avgMP52090 <- mean(MP5_2090$`50%`)
+avgMP52090
+stdMP52090 <- sd(MP5_2090$`50%`)
+stdMP52090
 
 # Now you can use this data frame with ggplot2
 MP5_2090_ModelPlot <- ggplot(MP5_2090) +
@@ -982,7 +1131,7 @@ MP5_2090_ModelErrorPlot <- ggplot(MP5_2090, mapping = aes(date)) +
   geom_line(mapping = aes(y = `97.5%`)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
-  geom_point(aes(x = date, y = MP1)) +
+  geom_point(aes(x = date, y = MP5)) +
   ggtitle("MP5 - Yakutat Forelands - RCP 8.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
@@ -991,8 +1140,8 @@ MP5_2090_ModelErrorPlot <- ggplot(MP5_2090, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 MP5_2090_ModelErrorPlot
 
-ggsave("Plots/MP5_2090_85_ModelPlot.jpeg", plot = MP5_2090_ModelPlot, width = 8, height = 6)
-ggsave("Plots/MP5_2090_85_ModelErrorPlot.jpeg", plot = MP5_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP5_2090_85_ModelPlot.jpeg", plot = MP5_2090_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP5_2090_85_ModelErrorPlot.jpeg", plot = MP5_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # MP8
@@ -1041,7 +1190,7 @@ model{
   
   #### Process Model
   for(t in 2:n){
-    x[t]~dnorm(k[t],tau_add)
+    x[t] ~ dnorm(k[t],tau_add)
     k[t] <- beta0[1] + beta0[2] * temp[t]
   }
   
@@ -1114,7 +1263,6 @@ jags.out   <- coda.samples (model = j.model,
 ### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
 
 ```{r}
-# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
 time                               ## adjust to zoom in and out
 time <-as.Date(time)
 out <- as.matrix(jags.out)         ## convert from coda to matrix
@@ -1146,12 +1294,14 @@ MP8ModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = MP8)) +
-  ggtitle("MP8 - Yakutat Forelands - RCP 8.5")+
-  ylim(-10,30)+
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 MP8ModelPlot
 
 MP8ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -1160,16 +1310,58 @@ MP8ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = MP8)) +
-  ggtitle("MP8 - Yakutat Forelands - RCP 8.5")+
-  ylim(-10,30)+
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 MP8ModelErrorPlot
 
-ggsave("Plots/MP8_85_ModelPlot.jpeg", plot = MP8ModelPlot, width = 8, height = 6)
-ggsave("Plots/MP8_85_ModelErrorPlot.jpeg", plot = MP8ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP8_85_ModelPlot.jpeg", plot = MP8ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP8_85_ModelErrorPlot.jpeg", plot = MP8ModelErrorPlot, width = 8, height = 6)
+```
+
+## Calculating the NSE (Nash-Sutcliffe efficiency) between our modeled/simulated values and the observations
+```{r}
+MP8Mod <- GraphDataOutputCheck
+write.csv(MP8Mod, file = "MP8Mod_85.csv", row.names = F)
+
+MP8_NSE <- NSE(MP8Mod$`50%`, GraphDataOutputCheck$MP8, na.rm = TRUE)
+MP8_NSE
+
+# filter to data before 2020 for the obs graph?
+MP8Mod_total <- MP8Mod
+
+MP8Mod <- MP8Mod %>%
+  filter(date < "2021-01-01")
+range(MP8Mod$date)
+avgMP82010 <- mean(MP8Mod$`50%`)
+avgMP82010
+stdMP82010 <- sd(MP8Mod$`50%`)
+stdMP82010
+
+MP8ModelErrorPlot <- ggplot(MP8Mod, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = MP8)) +
+  ggtitle("MP8 - Yakutat Forelands")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.976")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+MP8ModelErrorPlot
+
+ggsave("Output/SNAP/OriginalModel/Rerun/MP8_ObsModelPlot_85.jpeg", plot = MP8ModelErrorPlot, width = 8, height = 6)
+
 ```
 
 ####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
@@ -1179,6 +1371,10 @@ ggsave("Plots/MP8_85_ModelErrorPlot.jpeg", plot = MP8ModelErrorPlot, width = 8, 
 # filtering for 2030s
 MP8_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
+avgMP82030 <- mean(MP8_2030$`50%`)
+avgMP82030
+stdMP82030 <- sd(MP8_2030$`50%`)
+stdMP82030
 
 # Now you can use this data frame with ggplot2
 MP8_2030_ModelPlot <- ggplot(MP8_2030) +
@@ -1208,8 +1404,8 @@ MP8_2030_ModelErrorPlot <- ggplot(MP8_2030, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 MP8_2030_ModelErrorPlot
 
-ggsave("Plots/MP8_2030_85_ModelPlot.jpeg", plot = MP8_2030_ModelPlot, width = 8, height = 6)
-ggsave("Plots/MP8_2030_85_ModelErrorPlot.jpeg", plot = MP8_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP8_2030_85_ModelPlot.jpeg", plot = MP8_2030_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP8_2030_85_ModelErrorPlot.jpeg", plot = MP8_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -1217,13 +1413,17 @@ ggsave("Plots/MP8_2030_85_ModelErrorPlot.jpeg", plot = MP8_2030_ModelErrorPlot, 
 # filtering for 2030s
 MP8_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
+avgMP82060 <- mean(MP8_2060$`50%`)
+avgMP82060
+stdMP82060 <- sd(MP8_2060$`50%`)
+stdMP82060
 
 # Now you can use this data frame with ggplot2
 MP8_2060_ModelPlot <- ggplot(MP8_2060) +
   geom_line(aes(x = date, y = `50%`)) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
-  geom_point(aes(x = date, y = MP5)) +
+  geom_point(aes(x = date, y = MP8)) +
   ggtitle("MP8 - Yakutat Forelands - RCP 8.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
@@ -1246,8 +1446,8 @@ MP8_2060_ModelErrorPlot <- ggplot(MP8_2060, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 MP8_2060_ModelErrorPlot
 
-ggsave("Plots/MP8_2060_85_ModelPlot.jpeg", plot = MP8_2060_ModelPlot, width = 8, height = 6)
-ggsave("Plots/MP8_2060_85_ModelErrorPlot.jpeg", plot = MP8_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP8_2060_85_ModelPlot.jpeg", plot = MP8_2060_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP8_2060_85_ModelErrorPlot.jpeg", plot = MP8_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -1255,6 +1455,10 @@ ggsave("Plots/MP8_2060_85_ModelErrorPlot.jpeg", plot = MP8_2060_ModelErrorPlot, 
 # filtering for 2030s
 MP8_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
+avgMP82090 <- mean(MP8_2090$`50%`)
+avgMP82090
+stdMP82090 <- sd(MP8_2090$`50%`)
+stdMP82090
 
 # Now you can use this data frame with ggplot2
 MP8_2090_ModelPlot <- ggplot(MP8_2090) +
@@ -1284,8 +1488,8 @@ MP8_2090_ModelErrorPlot <- ggplot(MP8_2090, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 MP8_2090_ModelErrorPlot
 
-ggsave("Plots/MP8_2090_85_ModelPlot.jpeg", plot = MP8_2090_ModelPlot, width = 8, height = 6)
-ggsave("Plots/MP8_2090_85_ModelErrorPlot.jpeg", plot = MP8_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP8_2090_85_ModelPlot.jpeg", plot = MP8_2090_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/MP8_2090_85_ModelErrorPlot.jpeg", plot = MP8_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # PL1
@@ -1334,7 +1538,7 @@ model{
   
   #### Process Model
   for(t in 2:n){
-    x[t]~dnorm(k[t],tau_add)
+    x[t] ~ dnorm(k[t],tau_add)
     k[t] <- beta0[1] + beta0[2] * temp[t]
   }
   
@@ -1407,7 +1611,6 @@ jags.out   <- coda.samples (model = j.model,
 ### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
 
 ```{r}
-# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
 time                               ## adjust to zoom in and out
 time <-as.Date(time)
 out <- as.matrix(jags.out)         ## convert from coda to matrix
@@ -1434,35 +1637,79 @@ ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
   GraphDataOutputCheck <- merge(ModelOutput, YF_WaterTemp, by = "date", all = T)
 
 # Now you can use this data frame with ggplot2
-PL1_85_ModelPlot <- ggplot(GraphDataOutputCheck) +
+PL1ModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `50%`)) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = PL1)) +
-  ggtitle("PL1 - Yakutat Forelands - RCP 8.5")+
-  ylim(-10, 30)+
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
-PL1_85_ModelPlot
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+PL1ModelPlot
 
-PL1_85_ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+PL1ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
   geom_line(mapping = aes(y = `97.5%`)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = PL1)) +
-  ggtitle("PL1 - Yakutat Forelands - RCP 8.5")+
-  ylim(-10,30) +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
-PL1_85_ModelErrorPlot
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+PL1ModelErrorPlot
 
-ggsave("Plots/PL1_85_ModelPlot.jpeg", plot = PL1_85_ModelPlot, width = 8, height = 6)
-ggsave("Plots/PL1_85_ModelErrorPlot.jpeg", plot = PL1_85_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL1_85_ModelPlot.jpeg", plot = PL1ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL1_85_ModelErrorPlot.jpeg", plot = PL1ModelErrorPlot, width = 8, height = 6)
+```
+
+## Calculating the NSE (Nash-Sutcliffe efficiency) between our modeled/simulated values and the observations
+```{r}
+PL1Mod <- GraphDataOutputCheck
+write.csv(PL1Mod, file = "PL1Mod_85.csv", row.names = F)
+
+PL1_NSE <- NSE(PL1Mod$`50%`, GraphDataOutputCheck$PL1, na.rm = TRUE)
+PL1_NSE
+
+# filter to data before 2020 for the obs graph?
+PL1Mod_total <- PL1Mod
+
+PL1Mod <- PL1Mod %>%
+  filter(date < "2021-01-01")
+range(PL1Mod$date)
+avgPL12010 <- mean(PL1Mod$`50%`)
+avgPL12010
+stdPL12010 <- sd(PL1Mod$`50%`)
+stdPL12010
+
+PL1ModelErrorPlot <- ggplot(PL1Mod, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = PL1)) +
+  ggtitle("PL1 - Yakutat Forelands")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.973")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+PL1ModelErrorPlot
+
+ggsave("Output/SNAP/OriginalModel/Rerun/PL1_ObsModelPlot_85.jpeg", plot = PL1ModelErrorPlot, width = 8, height = 6)
+
 ```
 
 ####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
@@ -1472,6 +1719,10 @@ ggsave("Plots/PL1_85_ModelErrorPlot.jpeg", plot = PL1_85_ModelErrorPlot, width =
 # filtering for 2030s
 PL1_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
+avgPL12030 <- mean(PL1_2030$`50%`)
+avgPL12030
+stdPL12030 <- sd(PL1_2030$`50%`)
+stdPL12030
 
 # Now you can use this data frame with ggplot2
 PL1_2030_ModelPlot <- ggplot(PL1_2030) +
@@ -1501,8 +1752,8 @@ PL1_2030_ModelErrorPlot <- ggplot(PL1_2030, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 PL1_2030_ModelErrorPlot
 
-ggsave("Plots/PL1_2030_85_ModelPlot.jpeg", plot = PL1_2030_ModelPlot, width = 8, height = 6)
-ggsave("Plots/PL1_2030_85_ModelErrorPlot.jpeg", plot = PL1_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL1_2030_85_ModelPlot.jpeg", plot = PL1_2030_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL1_2030_85_ModelErrorPlot.jpeg", plot = PL1_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -1510,6 +1761,10 @@ ggsave("Plots/PL1_2030_85_ModelErrorPlot.jpeg", plot = PL1_2030_ModelErrorPlot, 
 # filtering for 2030s
 PL1_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
+avgPL12060 <- mean(PL1_2060$`50%`)
+avgPL12060
+stdPL12060 <- sd(PL1_2060$`50%`)
+stdPL12060
 
 # Now you can use this data frame with ggplot2
 PL1_2060_ModelPlot <- ggplot(PL1_2060) +
@@ -1539,8 +1794,8 @@ PL1_2060_ModelErrorPlot <- ggplot(PL1_2060, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 PL1_2060_ModelErrorPlot
 
-ggsave("Plots/PL1_2060_85_ModelPlot.jpeg", plot = PL1_2060_ModelPlot, width = 8, height = 6)
-ggsave("Plots/PL1_2060_85_ModelErrorPlot.jpeg", plot = PL1_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL1_2060_85_ModelPlot.jpeg", plot = PL1_2060_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL1_2060_85_ModelErrorPlot.jpeg", plot = PL1_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -1548,6 +1803,10 @@ ggsave("Plots/PL1_2060_85_ModelErrorPlot.jpeg", plot = PL1_2060_ModelErrorPlot, 
 # filtering for 2030s
 PL1_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
+avgPL12090 <- mean(PL1_2090$`50%`)
+avgPL12090
+stdPL12090 <- sd(PL1_2090$`50%`)
+stdPL12090
 
 # Now you can use this data frame with ggplot2
 PL1_2090_ModelPlot <- ggplot(PL1_2090) +
@@ -1577,8 +1836,8 @@ PL1_2090_ModelErrorPlot <- ggplot(PL1_2090, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 PL1_2090_ModelErrorPlot
 
-ggsave("Plots/PL1_2090_85_ModelPlot.jpeg", plot = PL1_2090_ModelPlot, width = 8, height = 6)
-ggsave("Plots/PL1_2090_85_ModelErrorPlot.jpeg", plot = PL1_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL1_2090_85_ModelPlot.jpeg", plot = PL1_2090_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL1_2090_85_ModelErrorPlot.jpeg", plot = MP8_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # PL2
@@ -1627,7 +1886,7 @@ model{
   
   #### Process Model
   for(t in 2:n){
-    x[t]~dnorm(k[t],tau_add)
+    x[t] ~ dnorm(k[t],tau_add)
     k[t] <- beta0[1] + beta0[2] * temp[t]
   }
   
@@ -1700,7 +1959,6 @@ jags.out   <- coda.samples (model = j.model,
 ### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
 
 ```{r}
-# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
 time                               ## adjust to zoom in and out
 time <-as.Date(time)
 out <- as.matrix(jags.out)         ## convert from coda to matrix
@@ -1727,35 +1985,79 @@ ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
   GraphDataOutputCheck <- merge(ModelOutput, YF_WaterTemp, by = "date", all = T)
 
 # Now you can use this data frame with ggplot2
-PL2_85_ModelPlot <- ggplot(GraphDataOutputCheck) +
+PL2ModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `50%`)) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = PL2)) +
-  ggtitle("PL2 - Yakutat Forelands - RCP 8.5")+
-  ylim(-10, 30) +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
-PL2_85_ModelPlot
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+PL2ModelPlot
 
-PL2_85_ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+PL2ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
   geom_line(mapping = aes(y = `97.5%`)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = PL2)) +
-  ggtitle("PL2 - Yakutat Forelands - RCP 8.5")+
-  ylim(-10,30) +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
-PL2_85_ModelErrorPlot
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+PL2ModelErrorPlot
 
-ggsave("Plots/PL2_85_ModelPlot.jpeg", plot = PL2_85_ModelPlot, width = 8, height = 6)
-ggsave("Plots/PL2_85_ModelErrorPlot.jpeg", plot = PL2_85_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL2_85_ModelPlot.jpeg", plot = PL2ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL2_85_ModelErrorPlot.jpeg", plot = PL2ModelErrorPlot, width = 8, height = 6)
+```
+
+## Calculating the NSE (Nash-Sutcliffe efficiency) between our modeled/simulated values and the observations
+```{r}
+PL2Mod <- GraphDataOutputCheck
+write.csv(PL2Mod, file = "PL2Mod_85.csv", row.names = F)
+
+PL2_NSE <- NSE(PL2Mod$`50%`, GraphDataOutputCheck$PL2, na.rm = TRUE)
+PL2_NSE
+
+# filter to data before 2020 for the obs graph?
+PL2Mod_total <- PL2Mod
+
+PL2Mod <- PL2Mod %>%
+  filter(date < "2021-01-01")
+range(PL2Mod$date)
+avgPL22010 <- mean(PL2Mod$`50%`)
+avgPL22010
+stdPL22010 <- sd(PL2Mod$`50%`)
+stdPL22010
+
+PL2ModelErrorPlot <- ggplot(PL2Mod, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = PL2)) +
+  ggtitle("PL2 - Yakutat Forelands")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.985")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+PL2ModelErrorPlot
+
+ggsave("Output/SNAP/OriginalModel/Rerun/PL2_ObsModelPlot_85.jpeg", plot = PL2ModelErrorPlot, width = 8, height = 6)
+
 ```
 
 ####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
@@ -1765,9 +2067,13 @@ ggsave("Plots/PL2_85_ModelErrorPlot.jpeg", plot = PL2_85_ModelErrorPlot, width =
 # filtering for 2030s
 PL2_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
+avgPL22030 <- mean(PL2_2030$`50%`)
+avgPL22030
+stdPL22030 <- sd(PL2_2030$`50%`)
+stdPL22030
 
 # Now you can use this data frame with ggplot2
-PL2_2030_ModelPlot <- ggplot(PL1_2030) +
+PL2_2030_ModelPlot <- ggplot(PL2_2030) +
   geom_line(aes(x = date, y = `50%`)) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
@@ -1794,8 +2100,8 @@ PL2_2030_ModelErrorPlot <- ggplot(PL2_2030, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 PL2_2030_ModelErrorPlot
 
-ggsave("Plots/PL2_2030_85_ModelPlot.jpeg", plot = PL2_2030_ModelPlot, width = 8, height = 6)
-ggsave("Plots/PL2_2030_85_ModelErrorPlot.jpeg", plot = PL2_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL2_2030_85_ModelPlot.jpeg", plot = PL2_2030_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL2_2030_85_ModelErrorPlot.jpeg", plot = PL2_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -1803,6 +2109,10 @@ ggsave("Plots/PL2_2030_85_ModelErrorPlot.jpeg", plot = PL2_2030_ModelErrorPlot, 
 # filtering for 2030s
 PL2_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
+avgPL22060 <- mean(PL2_2060$`50%`)
+avgPL22060
+stdPL22060 <- sd(PL2_2060$`50%`)
+stdPL22060
 
 # Now you can use this data frame with ggplot2
 PL2_2060_ModelPlot <- ggplot(PL2_2060) +
@@ -1832,8 +2142,8 @@ PL2_2060_ModelErrorPlot <- ggplot(PL2_2060, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 PL2_2060_ModelErrorPlot
 
-ggsave("Plots/PL2_2060_85_ModelPlot.jpeg", plot = PL2_2060_ModelPlot, width = 8, height = 6)
-ggsave("Plots/PL2_2060_85_ModelErrorPlot.jpeg", plot = PL2_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL2_2060_85_ModelPlot.jpeg", plot = PL2_2060_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL2_2060_85_ModelErrorPlot.jpeg", plot = PL2_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -1841,6 +2151,10 @@ ggsave("Plots/PL2_2060_85_ModelErrorPlot.jpeg", plot = PL2_2060_ModelErrorPlot, 
 # filtering for 2030s
 PL2_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
+avgPL22090 <- mean(PL2_2090$`50%`)
+avgPL22090
+stdPL22090 <- sd(PL2_2090$`50%`)
+stdPL22090
 
 # Now you can use this data frame with ggplot2
 PL2_2090_ModelPlot <- ggplot(PL2_2090) +
@@ -1870,8 +2184,8 @@ PL2_2090_ModelErrorPlot <- ggplot(PL2_2090, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 PL2_2090_ModelErrorPlot
 
-ggsave("Plots/PL2_2090_85_ModelPlot.jpeg", plot = PL2_2090_ModelPlot, width = 8, height = 6)
-ggsave("Plots/PL2_2090_85_ModelErrorPlot.jpeg", plot = PL2_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL2_2090_85_ModelPlot.jpeg", plot = PL2_2090_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL2_2090_85_ModelErrorPlot.jpeg", plot = MP8_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # PL3
@@ -1920,7 +2234,7 @@ model{
   
   #### Process Model
   for(t in 2:n){
-    x[t]~dnorm(k[t],tau_add)
+    x[t] ~ dnorm(k[t],tau_add)
     k[t] <- beta0[1] + beta0[2] * temp[t]
   }
   
@@ -1993,7 +2307,6 @@ jags.out   <- coda.samples (model = j.model,
 ### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
 
 ```{r}
-# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
 time                               ## adjust to zoom in and out
 time <-as.Date(time)
 out <- as.matrix(jags.out)         ## convert from coda to matrix
@@ -2020,35 +2333,79 @@ ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
   GraphDataOutputCheck <- merge(ModelOutput, YF_WaterTemp, by = "date", all = T)
 
 # Now you can use this data frame with ggplot2
-PL3_85_ModelPlot <- ggplot(GraphDataOutputCheck) +
+PL3ModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `50%`)) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = PL3)) +
-  ggtitle("PL3 - Yakutat Forelands - RCP 8.5")+
-  ylim(-10,30) +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
-PL3_85_ModelPlot
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+PL3ModelPlot
 
-PL3_85_ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+PL3ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
   geom_line(mapping = aes(y = `97.5%`)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = PL3)) +
-  ggtitle("PL3 - Yakutat Forelands - RCP 8.5")+
-  ylim(-10,30) +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
-PL3_85_ModelErrorPlot
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+PL3ModelErrorPlot
 
-ggsave("Plots/PL3_85_ModelPlot.jpeg", plot = PL3_85_ModelPlot, width = 8, height = 6)
-ggsave("Plots/PL3_85_ModelErrorPlot.jpeg", plot = PL3_85_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL3_85_ModelPlot.jpeg", plot = PL3ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL3_85_ModelErrorPlot.jpeg", plot = PL3ModelErrorPlot, width = 8, height = 6)
+```
+
+## Calculating the NSE (Nash-Sutcliffe efficiency) between our modeled/simulated values and the observations
+```{r}
+PL3Mod <- GraphDataOutputCheck
+write.csv(PL3Mod, file = "PL3Mod_85.csv", row.names = F)
+
+PL3_NSE <- NSE(PL3Mod$`50%`, GraphDataOutputCheck$PL3, na.rm = TRUE)
+PL3_NSE
+
+# filter to data before 2020 for the obs graph?
+PL3Mod_total <- PL3Mod
+
+PL3Mod <- PL3Mod %>%
+  filter(date < "2021-01-01")
+range(PL3Mod$date)
+avgPL32010 <- mean(PL3Mod$`50%`)
+avgPL32010
+stdPL32010 <- sd(PL3Mod$`50%`)
+stdPL32010
+
+PL3ModelErrorPlot <- ggplot(PL3Mod, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = PL3)) +
+  ggtitle("PL3 - Yakutat Forelands")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.981")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+PL3ModelErrorPlot
+
+ggsave("Output/SNAP/OriginalModel/Rerun/PL3_ObsModelPlot_85.jpeg", plot = PL3ModelErrorPlot, width = 8, height = 6)
+
 ```
 
 ####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
@@ -2058,6 +2415,10 @@ ggsave("Plots/PL3_85_ModelErrorPlot.jpeg", plot = PL3_85_ModelErrorPlot, width =
 # filtering for 2030s
 PL3_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
+avgPL32030 <- mean(PL3_2030$`50%`)
+avgPL32030
+stdPL32030 <- sd(PL3_2030$`50%`)
+stdPL32030
 
 # Now you can use this data frame with ggplot2
 PL3_2030_ModelPlot <- ggplot(PL3_2030) +
@@ -2087,8 +2448,8 @@ PL3_2030_ModelErrorPlot <- ggplot(PL3_2030, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 PL3_2030_ModelErrorPlot
 
-ggsave("Plots/PL3_2030_85_ModelPlot.jpeg", plot = PL3_2030_ModelPlot, width = 8, height = 6)
-ggsave("Plots/PL3_2030_85_ModelErrorPlot.jpeg", plot = PL3_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL3_2030_85_ModelPlot.jpeg", plot = PL3_2030_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL3_2030_85_ModelErrorPlot.jpeg", plot = PL3_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -2096,6 +2457,10 @@ ggsave("Plots/PL3_2030_85_ModelErrorPlot.jpeg", plot = PL3_2030_ModelErrorPlot, 
 # filtering for 2030s
 PL3_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
+avgPL32060 <- mean(PL3_2060$`50%`)
+avgPL32060
+stdPL32060 <- sd(PL3_2060$`50%`)
+stdPL32060
 
 # Now you can use this data frame with ggplot2
 PL3_2060_ModelPlot <- ggplot(PL3_2060) +
@@ -2125,8 +2490,8 @@ PL3_2060_ModelErrorPlot <- ggplot(PL3_2060, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 PL3_2060_ModelErrorPlot
 
-ggsave("Plots/PL3_2060_85_ModelPlot.jpeg", plot = PL3_2060_ModelPlot, width = 8, height = 6)
-ggsave("Plots/PL3_2060_85_ModelErrorPlot.jpeg", plot = PL3_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL3_2060_85_ModelPlot.jpeg", plot = PL3_2060_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL3_2060_85_ModelErrorPlot.jpeg", plot = PL3_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -2134,6 +2499,10 @@ ggsave("Plots/PL3_2060_85_ModelErrorPlot.jpeg", plot = PL3_2060_ModelErrorPlot, 
 # filtering for 2030s
 PL3_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
+avgPL32090 <- mean(PL3_2090$`50%`)
+avgPL32090
+stdPL32090 <- sd(PL3_2090$`50%`)
+stdPL32090
 
 # Now you can use this data frame with ggplot2
 PL3_2090_ModelPlot <- ggplot(PL3_2090) +
@@ -2163,8 +2532,8 @@ PL3_2090_ModelErrorPlot <- ggplot(PL3_2090, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 PL3_2090_ModelErrorPlot
 
-ggsave("Plots/PL3_2090_85_ModelPlot.jpeg", plot = PL3_2090_ModelPlot, width = 8, height = 6)
-ggsave("Plots/PL3_2090_85_ModelErrorPlot.jpeg", plot = PL3_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL3_2090_85_ModelPlot.jpeg", plot = PL3_2090_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/PL3_2090_85_ModelErrorPlot.jpeg", plot = MP8_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # UBP1
@@ -2213,7 +2582,7 @@ model{
   
   #### Process Model
   for(t in 2:n){
-    x[t]~dnorm(k[t],tau_add)
+    x[t] ~ dnorm(k[t],tau_add)
     k[t] <- beta0[1] + beta0[2] * temp[t]
   }
   
@@ -2286,7 +2655,6 @@ jags.out   <- coda.samples (model = j.model,
 ### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
 
 ```{r}
-# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
 time                               ## adjust to zoom in and out
 time <-as.Date(time)
 out <- as.matrix(jags.out)         ## convert from coda to matrix
@@ -2318,12 +2686,14 @@ UBP1ModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = UBP1)) +
-  ggtitle("UBP1 - Yakutat Forelands - RCP 8.5")+
-  ylim(-10,30) +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 UBP1ModelPlot
 
 UBP1ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -2332,16 +2702,58 @@ UBP1ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = UBP1)) +
-  ggtitle("UBP1- Yakutat Forelands - RCP 8.5")+
-  ylim(-10,30) +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 UBP1ModelErrorPlot
 
-ggsave("Plots/UBP1_85_ModelPlot.jpeg", plot = UBP1ModelPlot, width = 8, height = 6)
-ggsave("Plots/UBP1_85_ModelErrorPlot.jpeg", plot = UBP1ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP1_85_ModelPlot.jpeg", plot = UBP1ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP1_85_ModelErrorPlot.jpeg", plot = UBP1ModelErrorPlot, width = 8, height = 6)
+```
+
+## Calculating the NSE (Nash-Sutcliffe efficiency) between our modeled/simulated values and the observations
+```{r}
+UBP1Mod <- GraphDataOutputCheck
+write.csv(UBP1Mod, file = "UBP1Mod_85.csv", row.names = F)
+
+UBP1_NSE <- NSE(UBP1Mod$`50%`, GraphDataOutputCheck$UBP1, na.rm = TRUE)
+UBP1_NSE
+
+# filter to data before 2020 for the obs graph?
+UBP1Mod_total <- UBP1Mod
+
+UBP1Mod <- UBP1Mod %>%
+  filter(date < "2021-01-01")
+range(UBP1Mod$date)
+avgUBP12010 <- mean(UBP1Mod$`50%`)
+avgUBP12010
+stdUBP12010 <- sd(UBP1Mod$`50%`)
+stdUBP12010
+
+UBP1ModelErrorPlot <- ggplot(UBP1Mod, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = UBP1)) +
+  ggtitle("UBP1 - Yakutat Forelands")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.982")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+UBP1ModelErrorPlot
+
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP1_ObsModelPlot_85.jpeg", plot = UBP1ModelErrorPlot, width = 8, height = 6)
+
 ```
 
 ####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
@@ -2351,6 +2763,10 @@ ggsave("Plots/UBP1_85_ModelErrorPlot.jpeg", plot = UBP1ModelErrorPlot, width = 8
 # filtering for 2030s
 UBP1_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
+avgUBP12030 <- mean(UBP1_2030$`50%`)
+avgUBP12030
+stdUBP12030 <- sd(UBP1_2030$`50%`)
+stdUBP12030
 
 # Now you can use this data frame with ggplot2
 UBP1_2030_ModelPlot <- ggplot(UBP1_2030) +
@@ -2380,8 +2796,8 @@ UBP1_2030_ModelErrorPlot <- ggplot(UBP1_2030, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 UBP1_2030_ModelErrorPlot
 
-ggsave("Plots/UBP1_2030_85_ModelPlot.jpeg", plot = UBP1_2030_ModelPlot, width = 8, height = 6)
-ggsave("Plots/UBP1_2030_85_ModelErrorPlot.jpeg", plot = UBP1_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP1_2030_85_ModelPlot.jpeg", plot = UBP1_2030_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP1_2030_85_ModelErrorPlot.jpeg", plot = UBP1_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -2389,6 +2805,10 @@ ggsave("Plots/UBP1_2030_85_ModelErrorPlot.jpeg", plot = UBP1_2030_ModelErrorPlot
 # filtering for 2030s
 UBP1_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
+avgUBP12060 <- mean(UBP1_2060$`50%`)
+avgUBP12060
+stdUBP12060 <- sd(UBP1_2060$`50%`)
+stdUBP12060
 
 # Now you can use this data frame with ggplot2
 UBP1_2060_ModelPlot <- ggplot(UBP1_2060) +
@@ -2418,8 +2838,8 @@ UBP1_2060_ModelErrorPlot <- ggplot(UBP1_2060, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 UBP1_2060_ModelErrorPlot
 
-ggsave("Plots/UBP1_2060_85_ModelPlot.jpeg", plot = UBP1_2060_ModelPlot, width = 8, height = 6)
-ggsave("Plots/UBP1_2060_85_ModelErrorPlot.jpeg", plot = UBP1_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP1_2060_85_ModelPlot.jpeg", plot = UBP1_2060_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP1_2060_85_ModelErrorPlot.jpeg", plot = UBP1_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -2427,6 +2847,10 @@ ggsave("Plots/UBP1_2060_85_ModelErrorPlot.jpeg", plot = UBP1_2060_ModelErrorPlot
 # filtering for 2030s
 UBP1_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
+avgUBP12090 <- mean(UBP1_2090$`50%`)
+avgUBP12090
+stdUBP12090 <- sd(UBP1_2090$`50%`)
+stdUBP12090
 
 # Now you can use this data frame with ggplot2
 UBP1_2090_ModelPlot <- ggplot(UBP1_2090) +
@@ -2456,8 +2880,8 @@ UBP1_2090_ModelErrorPlot <- ggplot(UBP1_2090, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 UBP1_2090_ModelErrorPlot
 
-ggsave("Plots/UBP1_2090_85_ModelPlot.jpeg", plot = UBP1_2090_ModelPlot, width = 8, height = 6)
-ggsave("Plots/UBP1_2090_85_ModelErrorPlot.jpeg", plot = UBP1_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP1_2090_85_ModelPlot.jpeg", plot = UBP1_2090_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP1_2090_85_ModelErrorPlot.jpeg", plot = MP8_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 # UBP2
@@ -2506,7 +2930,7 @@ model{
   
   #### Process Model
   for(t in 2:n){
-    x[t]~dnorm(k[t],tau_add)
+    x[t] ~ dnorm(k[t],tau_add)
     k[t] <- beta0[1] + beta0[2] * temp[t]
   }
   
@@ -2579,7 +3003,6 @@ jags.out   <- coda.samples (model = j.model,
 ### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
 
 ```{r}
-# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
 time                               ## adjust to zoom in and out
 time <-as.Date(time)
 out <- as.matrix(jags.out)         ## convert from coda to matrix
@@ -2611,12 +3034,14 @@ UBP2ModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = UBP2)) +
-  ggtitle("UBP2 - Yakutat Forelands - RCP 8.5")+
-  ylim(-10,30) +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 UBP2ModelPlot
 
 UBP2ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -2625,16 +3050,58 @@ UBP2ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = UBP2)) +
-  ggtitle("UBP2- Yakutat Forelands - RCP 8.5")+
-  ylim(-10,30) +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 UBP2ModelErrorPlot
 
-ggsave("Plots/UBP2_85_ModelPlot.jpeg", plot = UBP2ModelPlot, width = 8, height = 6)
-ggsave("Plots/UBP2_85_ModelErrorPlot.jpeg", plot = UBP2ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP2_85_ModelPlot.jpeg", plot = UBP2ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP2_85_ModelErrorPlot.jpeg", plot = UBP2ModelErrorPlot, width = 8, height = 6)
+```
+
+## Calculating the NSE (Nash-Sutcliffe efficiency) between our modeled/simulated values and the observations
+```{r}
+UBP2Mod <- GraphDataOutputCheck
+write.csv(UBP2Mod, file = "UBP2Mod_85.csv", row.names = F)
+
+UBP2_NSE <- NSE(UBP2Mod$`50%`, GraphDataOutputCheck$UBP2, na.rm = TRUE)
+UBP2_NSE
+
+# filter to data before 2020 for the obs graph?
+UBP2Mod_total <- UBP2Mod
+
+UBP2Mod <- UBP2Mod %>%
+  filter(date < "2021-01-01")
+range(UBP2Mod$date)
+avgUBP22010 <- mean(UBP2Mod$`50%`)
+avgUBP22010
+stdUBP22010 <- sd(UBP2Mod$`50%`)
+stdUBP22010
+
+UBP2ModelErrorPlot <- ggplot(UBP2Mod, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = UBP2)) +
+  ggtitle("UBP2 - Yakutat Forelands")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.966")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+UBP2ModelErrorPlot
+
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP2_ObsModelPlot_85.jpeg", plot = UBP2ModelErrorPlot, width = 8, height = 6)
+
 ```
 
 ####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
@@ -2644,6 +3111,10 @@ ggsave("Plots/UBP2_85_ModelErrorPlot.jpeg", plot = UBP2ModelErrorPlot, width = 8
 # filtering for 2030s
 UBP2_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
+avgUBP22030 <- mean(UBP2_2030$`50%`)
+avgUBP22030
+stdUBP22030 <- sd(UBP2_2030$`50%`)
+stdUBP22030
 
 # Now you can use this data frame with ggplot2
 UBP2_2030_ModelPlot <- ggplot(UBP2_2030) +
@@ -2673,8 +3144,8 @@ UBP2_2030_ModelErrorPlot <- ggplot(UBP2_2030, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 UBP2_2030_ModelErrorPlot
 
-ggsave("Plots/UBP2_2030_85_ModelPlot.jpeg", plot = UBP2_2030_ModelPlot, width = 8, height = 6)
-ggsave("Plots/UBP2_2030_85_ModelErrorPlot.jpeg", plot = UBP2_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP2_2030_85_ModelPlot.jpeg", plot = UBP2_2030_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP2_2030_85_ModelErrorPlot.jpeg", plot = UBP2_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -2682,6 +3153,10 @@ ggsave("Plots/UBP2_2030_85_ModelErrorPlot.jpeg", plot = UBP2_2030_ModelErrorPlot
 # filtering for 2030s
 UBP2_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
+avgUBP22060 <- mean(UBP2_2060$`50%`)
+avgUBP22060
+stdUBP22060 <- sd(UBP2_2060$`50%`)
+stdUBP22060
 
 # Now you can use this data frame with ggplot2
 UBP2_2060_ModelPlot <- ggplot(UBP2_2060) +
@@ -2711,8 +3186,8 @@ UBP2_2060_ModelErrorPlot <- ggplot(UBP2_2060, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 UBP2_2060_ModelErrorPlot
 
-ggsave("Plots/UBP2_2060_85_ModelPlot.jpeg", plot = UBP2_2060_ModelPlot, width = 8, height = 6)
-ggsave("Plots/UBP2_2060_85_ModelErrorPlot.jpeg", plot = UBP2_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP2_2060_85_ModelPlot.jpeg", plot = UBP2_2060_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP2_2060_85_ModelErrorPlot.jpeg", plot = UBP2_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -2720,6 +3195,10 @@ ggsave("Plots/UBP2_2060_85_ModelErrorPlot.jpeg", plot = UBP2_2060_ModelErrorPlot
 # filtering for 2030s
 UBP2_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
+avgUBP22090 <- mean(UBP2_2090$`50%`)
+avgUBP22090
+stdUBP22090 <- sd(UBP2_2090$`50%`)
+stdUBP22090
 
 # Now you can use this data frame with ggplot2
 UBP2_2090_ModelPlot <- ggplot(UBP2_2090) +
@@ -2749,8 +3228,8 @@ UBP2_2090_ModelErrorPlot <- ggplot(UBP2_2090, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 UBP2_2090_ModelErrorPlot
 
-ggsave("Plots/UBP2_2090_85_ModelPlot.jpeg", plot = UBP2_2090_ModelPlot, width = 8, height = 6)
-ggsave("Plots/UBP2_2090_85_ModelErrorPlot.jpeg", plot = UBP2_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP2_2090_85_ModelPlot.jpeg", plot = UBP2_2090_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP2_2090_85_ModelErrorPlot.jpeg", plot = MP8_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 
@@ -2800,7 +3279,7 @@ model{
   
   #### Process Model
   for(t in 2:n){
-    x[t]~dnorm(k[t],tau_add)
+    x[t] ~ dnorm(k[t],tau_add)
     k[t] <- beta0[1] + beta0[2] * temp[t]
   }
   
@@ -2873,7 +3352,6 @@ jags.out   <- coda.samples (model = j.model,
 ### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
 
 ```{r}
-# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
 time                               ## adjust to zoom in and out
 time <-as.Date(time)
 out <- as.matrix(jags.out)         ## convert from coda to matrix
@@ -2905,12 +3383,14 @@ UBP3ModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = UBP3)) +
-  ggtitle("UBP3 - Yakutat Forelands - RCP 8.5")+
-  ylim(-10,30) +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 UBP3ModelPlot
 
 UBP3ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -2919,16 +3399,58 @@ UBP3ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = UBP3)) +
-  ggtitle("UBP3- Yakutat Forelands - RCP 8.5")+
-  ylim(-10,30) +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 UBP3ModelErrorPlot
 
-ggsave("Plots/UBP3_85_ModelPlot.jpeg", plot = UBP3ModelPlot, width = 8, height = 6)
-ggsave("Plots/UBP3_85_ModelErrorPlot.jpeg", plot = UBP3ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP3_85_ModelPlot.jpeg", plot = UBP3ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP3_85_ModelErrorPlot.jpeg", plot = UBP3ModelErrorPlot, width = 8, height = 6)
+```
+
+## Calculating the NSE (Nash-Sutcliffe efficiency) between our modeled/simulated values and the observations
+```{r}
+UBP3Mod <- GraphDataOutputCheck
+write.csv(UBP3Mod, file = "UBP3Mod_85.csv", row.names = F)
+
+UBP3_NSE <- NSE(UBP3Mod$`50%`, GraphDataOutputCheck$UBP3, na.rm = TRUE)
+UBP3_NSE
+
+# filter to data before 2020 for the obs graph?
+UBP3Mod_total <- UBP3Mod
+
+UBP3Mod <- UBP3Mod %>%
+  filter(date < "2021-01-01")
+range(UBP3Mod$date)
+avgUBP32010 <- mean(UBP3Mod$`50%`)
+avgUBP32010
+stdUBP32010 <- sd(UBP3Mod$`50%`)
+stdUBP32010
+
+UBP3ModelErrorPlot <- ggplot(UBP3Mod, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = UBP3)) +
+  ggtitle("UBP3 - Yakutat Forelands")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.978")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+UBP3ModelErrorPlot
+
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP3_ObsModelPlot_85.jpeg", plot = UBP3ModelErrorPlot, width = 8, height = 6)
+
 ```
 
 ####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
@@ -2938,6 +3460,10 @@ ggsave("Plots/UBP3_85_ModelErrorPlot.jpeg", plot = UBP3ModelErrorPlot, width = 8
 # filtering for 2030s
 UBP3_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
+avgUBP32030 <- mean(UBP3_2030$`50%`)
+avgUBP32030
+stdUBP32030 <- sd(UBP3_2030$`50%`)
+stdUBP32030
 
 # Now you can use this data frame with ggplot2
 UBP3_2030_ModelPlot <- ggplot(UBP3_2030) +
@@ -2967,8 +3493,8 @@ UBP3_2030_ModelErrorPlot <- ggplot(UBP3_2030, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 UBP3_2030_ModelErrorPlot
 
-ggsave("Plots/UBP3_2030_85_ModelPlot.jpeg", plot = UBP3_2030_ModelPlot, width = 8, height = 6)
-ggsave("Plots/UBP3_2030_85_ModelErrorPlot.jpeg", plot = UBP3_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP3_2030_85_ModelPlot.jpeg", plot = UBP3_2030_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP3_2030_85_ModelErrorPlot.jpeg", plot = UBP3_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -2976,6 +3502,10 @@ ggsave("Plots/UBP3_2030_85_ModelErrorPlot.jpeg", plot = UBP3_2030_ModelErrorPlot
 # filtering for 2030s
 UBP3_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
+avgUBP32060 <- mean(UBP3_2060$`50%`)
+avgUBP32060
+stdUBP32060 <- sd(UBP3_2060$`50%`)
+stdUBP32060
 
 # Now you can use this data frame with ggplot2
 UBP3_2060_ModelPlot <- ggplot(UBP3_2060) +
@@ -3005,8 +3535,8 @@ UBP3_2060_ModelErrorPlot <- ggplot(UBP3_2060, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 UBP3_2060_ModelErrorPlot
 
-ggsave("Plots/UBP3_2060_85_ModelPlot.jpeg", plot = UBP3_2060_ModelPlot, width = 8, height = 6)
-ggsave("Plots/UBP3_2060_85_ModelErrorPlot.jpeg", plot = UBP3_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP3_2060_85_ModelPlot.jpeg", plot = UBP3_2060_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP3_2060_85_ModelErrorPlot.jpeg", plot = UBP3_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -3014,6 +3544,10 @@ ggsave("Plots/UBP3_2060_85_ModelErrorPlot.jpeg", plot = UBP3_2060_ModelErrorPlot
 # filtering for 2030s
 UBP3_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
+avgUBP32090 <- mean(UBP3_2090$`50%`)
+avgUBP32090
+stdUBP32090 <- sd(UBP3_2090$`50%`)
+stdUBP32090
 
 # Now you can use this data frame with ggplot2
 UBP3_2090_ModelPlot <- ggplot(UBP3_2090) +
@@ -3043,8 +3577,8 @@ UBP3_2090_ModelErrorPlot <- ggplot(UBP3_2090, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 UBP3_2090_ModelErrorPlot
 
-ggsave("Plots/UBP3_2090_85_ModelPlot.jpeg", plot = UBP3_2090_ModelPlot, width = 8, height = 6)
-ggsave("Plots/UBP3_2090_85_ModelErrorPlot.jpeg", plot = UBP3_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP3_2090_85_ModelPlot.jpeg", plot = UBP3_2090_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP3_2090_85_ModelErrorPlot.jpeg", plot = MP8_2090_ModelErrorPlot, width = 8, height = 6)
 ```
 
 
@@ -3094,7 +3628,7 @@ model{
   
   #### Process Model
   for(t in 2:n){
-    x[t]~dnorm(k[t],tau_add)
+    x[t] ~ dnorm(k[t],tau_add)
     k[t] <- beta0[1] + beta0[2] * temp[t]
   }
   
@@ -3167,7 +3701,6 @@ jags.out   <- coda.samples (model = j.model,
 ### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
 
 ```{r}
-# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
 time                               ## adjust to zoom in and out
 time <-as.Date(time)
 out <- as.matrix(jags.out)         ## convert from coda to matrix
@@ -3199,12 +3732,14 @@ UBP4ModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = UBP4)) +
-  ggtitle("UBP4 - Yakutat Forelands - RCP 8.5")+
-  ylim(-10,30) +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 UBP4ModelPlot
 
 UBP4ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -3213,16 +3748,58 @@ UBP4ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = UBP4)) +
-  ggtitle("UBP4 - Yakutat Forelands - RCP 8.5")+
-  ylim(-10,30) +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 UBP4ModelErrorPlot
 
-ggsave("Plots/UBP4_85_ModelPlot.jpeg", plot = UBP4ModelPlot, width = 8, height = 6)
-ggsave("Plots/UBP4_85_ModelErrorPlot.jpeg", plot = UBP4ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP4_85_ModelPlot.jpeg", plot = UBP4ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP4_85_ModelErrorPlot.jpeg", plot = UBP4ModelErrorPlot, width = 8, height = 6)
+```
+
+## Calculating the NSE (Nash-Sutcliffe efficiency) between our modeled/simulated values and the observations
+```{r}
+UBP4Mod <- GraphDataOutputCheck
+write.csv(UBP4Mod, file = "UBP4Mod_85.csv", row.names = F)
+
+UBP4_NSE <- NSE(UBP4Mod$`50%`, GraphDataOutputCheck$UBP4, na.rm = TRUE)
+UBP4_NSE
+
+# filter to data before 2020 for the obs graph?
+UBP4Mod_total <- UBP4Mod
+
+UBP4Mod <- UBP4Mod %>%
+  filter(date < "2021-01-01")
+range(UBP4Mod$date)
+avgUBP42010 <- mean(UBP4Mod$`50%`)
+avgUBP42010
+stdUBP42010 <- sd(UBP4Mod$`50%`)
+stdUBP42010
+
+UBP4ModelErrorPlot <- ggplot(UBP4Mod, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = UBP4)) +
+  ggtitle("UBP4 - Yakutat Forelands")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.966")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+UBP4ModelErrorPlot
+
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP4_ObsModelPlot_85.jpeg", plot = UBP4ModelErrorPlot, width = 8, height = 6)
+
 ```
 
 ####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
@@ -3232,6 +3809,10 @@ ggsave("Plots/UBP4_85_ModelErrorPlot.jpeg", plot = UBP4ModelErrorPlot, width = 8
 # filtering for 2030s
 UBP4_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
+avgUBP42030 <- mean(UBP4_2030$`50%`)
+avgUBP42030
+stdUBP42030 <- sd(UBP4_2030$`50%`)
+stdUBP42030
 
 # Now you can use this data frame with ggplot2
 UBP4_2030_ModelPlot <- ggplot(UBP4_2030) +
@@ -3261,8 +3842,8 @@ UBP4_2030_ModelErrorPlot <- ggplot(UBP4_2030, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 UBP4_2030_ModelErrorPlot
 
-ggsave("Plots/UBP4_2030_85_ModelPlot.jpeg", plot = UBP4_2030_ModelPlot, width = 8, height = 6)
-ggsave("Plots/UBP4_2030_85_ModelErrorPlot.jpeg", plot = UBP4_2030_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP4_2030_85_ModelPlot.jpeg", plot = UBP4_2030_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP4_2030_85_ModelErrorPlot.jpeg", plot = UBP4_2030_ModelErrorPlot, width = 8, height = 6)
 ```
 
 2. 2060s
@@ -3270,6 +3851,10 @@ ggsave("Plots/UBP4_2030_85_ModelErrorPlot.jpeg", plot = UBP4_2030_ModelErrorPlot
 # filtering for 2030s
 UBP4_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
+avgUBP42060 <- mean(UBP4_2060$`50%`)
+avgUBP42060
+stdUBP42060 <- sd(UBP4_2060$`50%`)
+stdUBP42060
 
 # Now you can use this data frame with ggplot2
 UBP4_2060_ModelPlot <- ggplot(UBP4_2060) +
@@ -3299,8 +3884,8 @@ UBP4_2060_ModelErrorPlot <- ggplot(UBP4_2060, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 UBP4_2060_ModelErrorPlot
 
-ggsave("Plots/UBP4_2060_85_ModelPlot.jpeg", plot = UBP4_2060_ModelPlot, width = 8, height = 6)
-ggsave("Plots/UBP4_2060_85_ModelErrorPlot.jpeg", plot = UBP4_2060_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP4_2060_85_ModelPlot.jpeg", plot = UBP4_2060_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP4_2060_85_ModelErrorPlot.jpeg", plot = UBP4_2060_ModelErrorPlot, width = 8, height = 6)
 ```
 
 3. 2090s
@@ -3308,6 +3893,10 @@ ggsave("Plots/UBP4_2060_85_ModelErrorPlot.jpeg", plot = UBP4_2060_ModelErrorPlot
 # filtering for 2030s
 UBP4_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
+avgUBP42090 <- mean(UBP4_2090$`50%`)
+avgUBP42090
+stdUBP42090 <- sd(UBP4_2090$`50%`)
+stdUBP42090
 
 # Now you can use this data frame with ggplot2
 UBP4_2090_ModelPlot <- ggplot(UBP4_2090) +
@@ -3337,12 +3926,356 @@ UBP4_2090_ModelErrorPlot <- ggplot(UBP4_2090, mapping = aes(date)) +
   theme(plot.title = element_text(hjust = 0.5))
 UBP4_2090_ModelErrorPlot
 
-ggsave("Plots/UBP4_2090_85_ModelPlot.jpeg", plot = UBP4_2090_ModelPlot, width = 8, height = 6)
-ggsave("Plots/UBP4_2090_85_ModelErrorPlot.jpeg", plot = UBP4_2090_ModelErrorPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP4_2090_85_ModelPlot.jpeg", plot = UBP4_2090_ModelPlot, width = 8, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/UBP4_2090_85_ModelErrorPlot.jpeg", plot = MP8_2090_ModelErrorPlot, width = 8, height = 6)
 ```
-# Graphing these
 
-## Attempting graphs as one output
+# Graphing results
+
+## Attempt by decades
+
+### 2030s 
+
+#### Minimum
+```{r}
+# setPL3g up the dataframe here
+
+YF_85_2030 <- MP1_2030
+str(YF_85_2030)
+
+YF_85_2030 <- YF_85_2030 %>%
+  select(date, MP1, MP3, MP5, MP8, PL1, PL2, PL3, UBP1, UBP2, UBP3, UBP4) %>%
+  dplyr::rename(MP1_min = MP1) %>%
+  dplyr::rename(MP3_min = MP3) %>%
+  dplyr::rename(MP5_min = MP5) %>%
+  dplyr::rename(MP8_min = MP8) %>%
+  dplyr::rename(PL1_min = PL1) %>%
+  dplyr::rename(PL2_min = PL2) %>%
+  dplyr::rename(PL3_min = PL3) %>%
+  dplyr::rename(UBP1_min = UBP1) %>%
+  dplyr::rename(UBP2_min = UBP2) %>%
+  dplyr::rename(UBP3_min = UBP3) %>%
+  dplyr::rename(UBP4_min = UBP4) 
+str(YF_85_2030)
+
+attr(YF_85_2030, 'row.names') <- 1:nrow(MP1_2030)
+
+test <- YF_85_2030
+
+test$date <- MP1_2030$date
+test$MP1_min <- MP1_2030$`2.5%`
+test$MP3_min <- MP3_2030$`2.5%`
+test$MP5_min <- MP5_2030$`2.5%`
+test$MP8_min <- MP8_2030$`2.5%`
+test$PL1_min <- PL1_2030$`2.5%`
+test$PL2_min <- PL2_2030$`2.5%`
+test$PL3_min <- PL3_2030$`2.5%`
+test$UBP1_min <- UBP1_2030$`2.5%`
+test$UBP2_min <- UBP2_2030$`2.5%`
+test$UBP3_min <- UBP3_2030$`2.5%`
+test$UBP4_min <- UBP4_2030$`2.5%`
+
+str(test)
+YF_85_2030 <- test
+rm(test)
+
+# pivoPL3g this longer so there is one column for mean here library(tidyr)
+
+# Assuming your dataframe is named 'test'
+test_long <- pivot_longer(YF_85_2030, cols = -date, names_to = "Location", values_to = "Min_Temp")
+
+# Preview the pivoted data
+head(test_long)
+str(test_long)
+
+YF_2030_long <- test_long
+str(YF_2030_long)
+
+```
+
+#### Mean
+
+```{r}
+YF_85_2030 <- MP1_2030[0,]
+str(YF_85_2030)
+
+YF_85_2030 <- YF_85_2030 %>%
+  select(date, MP1, MP3, MP5, MP8, PL1, PL2, PL3, UBP1, UBP2, UBP3, UBP4) %>%
+  dplyr::rename(MP1_mean = MP1) %>%
+  dplyr::rename(MP3_mean = MP3) %>%
+  dplyr::rename(MP5_mean = MP5) %>%
+  dplyr::rename(MP8_mean = MP8) %>%
+  dplyr::rename(PL1_mean = PL1) %>%
+  dplyr::rename(PL2_mean = PL2) %>%
+  dplyr::rename(PL3_mean = PL3) %>%
+  dplyr::rename(UBP1_mean = UBP1) %>%
+  dplyr::rename(UBP2_mean = UBP2) %>%
+  dplyr::rename(UBP3_mean = UBP3) %>%
+  dplyr::rename(UBP4_mean = UBP4) 
+str(YF_85_2030)
+
+attr(YF_85_2030, 'row.names') <- 1:nrow(MP1_2030)
+
+test <- YF_85_2030
+
+test$date <- MP1_2030$date
+test$MP1_mean <- MP1_2030$`50%`
+test$MP3_mean <- MP3_2030$`50%`
+test$MP5_mean <- MP5_2030$`50%`
+test$MP8_mean <- MP8_2030$`50%`
+test$PL1_mean <- PL1_2030$`50%`
+test$PL2_mean <- PL2_2030$`50%`
+test$PL3_mean <- PL3_2030$`50%`
+test$UBP1_mean <- UBP1_2030$`50%`
+test$UBP2_mean <- UBP2_2030$`50%`
+test$UBP3_mean <- UBP3_2030$`50%`
+test$UBP4_mean <- UBP4_2030$`50%`
+
+str(test)
+
+YF_85_2030 <- test
+
+# pivoPL3g this longer so there is one column for mean here library(tidyr)
+# Assuming your dataframe is named 'test'
+test_long <- pivot_longer(YF_85_2030, cols = -date, names_to = "Location", values_to = "Mean_Temp")
+
+# Preview the pivoted data
+head(test_long)
+str(test_long)
+
+YF_2030_long$Mean_Temp <- test_long$Mean_Temp
+str(YF_2030_long)
+
+rm(test, test_long)
+```
+
+#### Maximum
+
+```{r}
+YF_85_2030 <- MP1_2030[0,]
+str(YF_85_2030)
+
+YF_85_2030 <- YF_85_2030 %>%
+  select(date, MP1, MP3, MP5, MP8, PL1, PL2, PL3, UBP1, UBP2, UBP3, UBP4) %>%
+  dplyr::rename(MP1_max = MP1) %>%
+  dplyr::rename(MP3_max = MP3) %>%
+  dplyr::rename(MP5_max = MP5) %>%
+  dplyr::rename(MP8_max = MP8) %>%
+  dplyr::rename(PL1_max = PL1) %>%
+  dplyr::rename(PL2_max = PL2) %>%
+  dplyr::rename(PL3_max = PL3) %>%
+  dplyr::rename(UBP1_max = UBP1) %>%
+  dplyr::rename(UBP2_max = UBP2) %>%
+  dplyr::rename(UBP3_max = UBP3) %>%
+  dplyr::rename(UBP4_max = UBP4) 
+str(YF_85_2030)
+
+attr(YF_85_2030, 'row.names') <- 1:nrow(MP1_2030)
+
+test <- YF_85_2030
+
+test$date <- MP1_2030$date
+test$MP1_max <- MP1_2030$`97.5%`
+test$MP3_max <- MP3_2030$`97.5%`
+test$MP5_max <- MP5_2030$`97.5%`
+test$MP8_max <- MP8_2030$`97.5%`
+test$PL1_max <- PL1_2030$`97.5%`
+test$PL2_max <- PL2_2030$`97.5%`
+test$PL3_max <- PL3_2030$`97.5%`
+test$UBP1_max <- UBP1_2030$`97.5%`
+test$UBP2_max <- UBP2_2030$`97.5%`
+test$UBP3_max <- UBP3_2030$`97.5%`
+test$UBP4_max <- UBP4_2030$`97.5%`
+
+str(test)
+
+YF_85_2030 <- test
+
+# pivoPL3g this longer so there is one column for mean here library(tidyr)
+# Assuming your dataframe is named 'test'
+test_long <- pivot_longer(YF_85_2030, cols = -date, names_to = "Location", values_to = "Max_Temp")
+
+# Preview the pivoted data
+head(test_long)
+str(test_long)
+
+YF_2030_long$Max_Temp <- test_long$Max_Temp
+str(YF_2030_long)
+
+rm(test, test_long)
+
+```
+
+#### Attemping a graph of this
+
+YFeate a column for month
+```{R}
+str(YF_85_2030)
+
+test <- YF_85_2030 %>%
+  mutate(month = month(date))
+
+
+
+```
+
+### 2060s 
+
+#### Minimum
+```{r}
+# setPL3g up the dataframe here
+
+YF_85_2060 <- YF_85_2030[0,]
+str(YF_85_2060)
+
+
+attr(YF_85_2060, 'row.names') <- 1:nrow(MP1_2060)
+
+test <- YF_85_2060
+
+test$date <- MP1_2060$date
+test$MP1_min <- MP1_2060$`2.5%`
+test$MP3_min <- MP3_2060$`2.5%`
+test$MP5_min <- MP5_2060$`2.5%`
+test$MP8_min <- MP8_2060$`2.5%`
+test$PL1_min <- PL1_2060$`2.5%`
+test$PL2_min <- PL2_2060$`2.5%`
+test$PL3_min <- PL3_2060$`2.5%`
+test$UBP1_min <- UBP1_2060$`2.5%`
+test$UBP2_min <- UBP2_2060$`2.5%`
+test$UBP3_min <- UBP3_2060$`2.5%`
+test$UBP4_min <- UBP4_2060$`2.5%`
+
+str(test)
+YF_85_2060 <- test
+rm(test)
+```
+
+#### Mean
+
+```{r}
+test <- YF_85_2060
+
+test$MP1_mean <- MP1_2060$`50%`
+test$MP3_mean <- MP3_2060$`50%`
+test$MP5_mean <- MP5_2060$`50%`
+test$MP8_mean <- MP8_2060$`50%`
+test$PL1_mean <- PL1_2060$`50%`
+test$PL2_mean <- PL2_2060$`50%`
+test$PL3_mean <- PL3_2060$`50%`
+test$UBP1_mean <- UBP1_2060$`50%`
+test$UBP2_mean <- UBP2_2060$`50%`
+test$UBP3_mean <- UBP3_2060$`50%`
+test$UBP4_mean <- UBP4_2060$`50%`
+
+str(test)
+
+YF_85_2060 <- test
+rm(test)
+```
+
+#### Maximum
+
+```{r}
+test <- YF_85_2060
+
+test$MP1_max <- MP1_2060$`97.5%`
+test$MP3_max <- MP3_2060$`97.5%`
+test$MP5_max <- MP5_2060$`97.5%`
+test$MP8_max <- MP8_2060$`97.5%`
+test$PL1_max <- PL1_2060$`97.5%`
+test$PL2_max <- PL2_2060$`97.5%`
+test$PL3_max <- PL3_2060$`97.5%`
+test$UBP1_max <- UBP1_2060$`97.5%`
+test$UBP2_max <- UBP2_2060$`97.5%`
+test$UBP3_max <- UBP3_2060$`97.5%`
+test$UBP4_max <- UBP4_2060$`97.5%`
+
+str(test)
+
+YF_85_2060 <- test
+rm(test)
+```
+
+### 2090s 
+
+#### Minimum
+```{r}
+# setPL3g up the dataframe here
+
+YF_85_2090 <- YF_85_2060[0,]
+str(YF_85_2090)
+
+attr(YF_85_2090, 'row.names') <- 1:nrow(MP1_2090)
+
+test <- YF_85_2090
+
+test$date <- MP1_2090$date
+test$MP1_min <- MP1_2090$`2.5%`
+test$MP3_min <- MP3_2090$`2.5%`
+test$MP5_min <- MP5_2090$`2.5%`
+test$MP8_min <- MP8_2090$`2.5%`
+test$PL1_min <- PL1_2090$`2.5%`
+test$PL2_min <- PL2_2090$`2.5%`
+test$PL3_min <- PL3_2090$`2.5%`
+test$UBP1_min <- UBP1_2090$`2.5%`
+test$UBP2_min <- UBP2_2090$`2.5%`
+test$UBP3_min <- UBP3_2090$`2.5%`
+test$UBP4_min <- UBP4_2090$`2.5%`
+
+str(test)
+YF_85_2090 <- test
+rm(test)
+```
+
+#### Mean
+
+```{r}
+test <- YF_85_2090
+
+test$MP1_mean <- MP1_2090$`50%`
+test$MP3_mean <- MP3_2090$`50%`
+test$MP5_mean <- MP5_2090$`50%`
+test$MP8_mean <- MP8_2090$`50%`
+test$PL1_mean <- PL1_2090$`50%`
+test$PL2_mean <- PL2_2090$`50%`
+test$PL3_mean <- PL3_2090$`50%`
+test$UBP1_mean <- UBP1_2090$`50%`
+test$UBP2_mean <- UBP2_2090$`50%`
+test$UBP3_mean <- UBP3_2090$`50%`
+test$UBP4_mean <- UBP4_2090$`50%`
+
+str(test)
+
+YF_85_2090 <- test
+rm(test)
+```
+
+#### Maximum
+
+```{r}
+test <- YF_85_2090
+
+test$MP1_max <- MP1_2090$`97.5%`
+test$MP3_max <- MP3_2090$`97.5%`
+test$MP5_max <- MP5_2090$`97.5%`
+test$MP8_max <- MP8_2090$`97.5%`
+test$PL1_max <- PL1_2090$`97.5%`
+test$PL2_max <- PL2_2090$`97.5%`
+test$PL3_max <- PL3_2090$`97.5%`
+test$UBP1_max <- UBP1_2090$`97.5%`
+test$UBP2_max <- UBP2_2090$`97.5%`
+test$UBP3_max <- UBP3_2090$`97.5%`
+test$UBP4_max <- UBP4_2090$`97.5%`
+
+str(test)
+
+YF_85_2090 <- test
+rm(test)
+```
+
+
+## Attempt as a whole?
 
 ### Mean
 
@@ -3354,17 +4287,17 @@ str(YF_85_2030)
 
 YF_85_2030 <- YF_85_2030 %>%
   select(date, MP1, MP3, MP5, MP8, PL1, PL2, PL3, UBP1, UBP2, UBP3, UBP4) %>%
-  rename(MP1_mean = MP1) %>%
-  rename(MP3_mean = MP3) %>%
-  rename(MP5_mean = MP5) %>%
-  rename(MP8_mean = MP8) %>%
-  rename(PL1_mean = PL1) %>%
-  rename(PL2_mean = PL2) %>%
-  rename(PL3_mean = PL3) %>%
-  rename(UBP1_mean = UBP1) %>%
-  rename(UBP2_mean = UBP2) %>%
-  rename(UBP3_mean = UBP3) %>%
-  rename(UBP4_mean = UBP4)
+  dplyr::rename(MP1_mean = MP1) %>%
+  dplyr::rename(MP3_mean = MP3) %>%
+  dplyr::rename(MP5_mean = MP5) %>%
+  dplyr::rename(MP8_mean = MP8) %>%
+  dplyr::rename(PL1_mean = PL1) %>%
+  dplyr::rename(PL2_mean = PL2) %>%
+  dplyr::rename(PL3_mean = PL3) %>%
+  dplyr::rename(UBP1_mean = UBP1) %>%
+  dplyr::rename(UBP2_mean = UBP2) %>%
+  dplyr::rename(UBP3_mean = UBP3) %>%
+  dplyr::rename(UBP4_mean = UBP4) 
 str(YF_85_2030)
 
 attr(YF_85_2030, 'row.names') <- 1:nrow(MP1_2030)
@@ -3396,8 +4329,8 @@ test_long <- pivot_longer(YF_85_2030, cols = -date, names_to = "Location", value
 head(test_long)
 str(test_long)
 
-YFD_Mean_long<- test_long
-str(YFD_Mean_long)
+YF_Mean_long<- test_long
+str(YF_Mean_long)
 
 rm(test, test_long)
 ```
@@ -3410,17 +4343,17 @@ str(YF_85_2060)
 
 YF_85_2060 <- YF_85_2060 %>%
   select(date, MP1, MP3, MP5, MP8, PL1, PL2, PL3, UBP1, UBP2, UBP3, UBP4) %>%
-  rename(MP1_mean = MP1) %>%
-  rename(MP3_mean = MP3) %>%
-  rename(MP5_mean = MP5) %>%
-  rename(MP8_mean = MP8) %>%
-  rename(PL1_mean = PL1) %>%
-  rename(PL2_mean = PL2) %>%
-  rename(PL3_mean = PL3) %>%
-  rename(UBP1_mean = UBP1) %>%
-  rename(UBP2_mean = UBP2) %>%
-  rename(UBP3_mean = UBP3) %>%
-  rename(UBP4_mean = UBP4)
+  dplyr::rename(MP1_mean = MP1) %>%
+  dplyr::rename(MP3_mean = MP3) %>%
+  dplyr::rename(MP5_mean = MP5) %>%
+  dplyr::rename(MP8_mean = MP8) %>%
+  dplyr::rename(PL1_mean = PL1) %>%
+  dplyr::rename(PL2_mean = PL2) %>%
+  dplyr::rename(PL3_mean = PL3) %>%
+  dplyr::rename(UBP1_mean = UBP1) %>%
+  dplyr::rename(UBP2_mean = UBP2) %>%
+  dplyr::rename(UBP3_mean = UBP3) %>%
+  dplyr::rename(UBP4_mean = UBP4) 
 str(YF_85_2060)
 
 attr(YF_85_2060, 'row.names') <- 1:nrow(MP1_2030)
@@ -3452,8 +4385,8 @@ test_long <- pivot_longer(YF_85_2060, cols = -date, names_to = "Location", value
 head(test_long)
 str(test_long)
 
-YFD_Mean_long$Mean2060_Temp <- test_long$Mean2060_Temp
-str(YFD_Mean_long)
+YF_Mean_long$Mean2060_Temp <- test_long$Mean2060_Temp
+str(YF_Mean_long)
 
 rm(test, test_long)
 ```
@@ -3467,17 +4400,17 @@ str(YF_85_2090)
 
 YF_85_2090 <- YF_85_2090 %>%
   select(date, MP1, MP3, MP5, MP8, PL1, PL2, PL3, UBP1, UBP2, UBP3, UBP4) %>%
-  rename(MP1_mean = MP1) %>%
-  rename(MP3_mean = MP3) %>%
-  rename(MP5_mean = MP5) %>%
-  rename(MP8_mean = MP8) %>%
-  rename(PL1_mean = PL1) %>%
-  rename(PL2_mean = PL2) %>%
-  rename(PL3_mean = PL3) %>%
-  rename(UBP1_mean = UBP1) %>%
-  rename(UBP2_mean = UBP2) %>%
-  rename(UBP3_mean = UBP3) %>%
-  rename(UBP4_mean = UBP4)
+  dplyr::rename(MP1_mean = MP1) %>%
+  dplyr::rename(MP3_mean = MP3) %>%
+  dplyr::rename(MP5_mean = MP5) %>%
+  dplyr::rename(MP8_mean = MP8) %>%
+  dplyr::rename(PL1_mean = PL1) %>%
+  dplyr::rename(PL2_mean = PL2) %>%
+  dplyr::rename(PL3_mean = PL3) %>%
+  dplyr::rename(UBP1_mean = UBP1) %>%
+  dplyr::rename(UBP2_mean = UBP2) %>%
+  dplyr::rename(UBP3_mean = UBP3) %>%
+  dplyr::rename(UBP4_mean = UBP4) 
 str(YF_85_2090)
 
 attr(YF_85_2090, 'row.names') <- 1:nrow(MP1_2090)
@@ -3509,8 +4442,8 @@ test_long <- pivot_longer(YF_85_2090, cols = -date, names_to = "Location", value
 head(test_long)
 str(test_long)
 
-YFD_Mean_long$Mean2090_Temp <- test_long$Mean2090_Temp
-str(YFD_Mean_long)
+YF_Mean_long$Mean2090_Temp <- test_long$Mean2090_Temp
+str(YF_Mean_long)
 
 rm(test, test_long)
 ```
@@ -3518,17 +4451,16 @@ rm(test, test_long)
 ####GetPL3g monthly stats
 
 ```{r}
-# Assuming your dataframe is named 'YFD_Mean_long'
-monthly_stats <- YFD_Mean_long %>%
-  mutate(Month = format(date, "%m")) %>%
-  group_by(Month) %>%
-  summarize(
+monthly_stats <- YF_Mean_long %>%
+  dplyr::mutate(Month = format(date, "%m")) %>%
+  dplyr::group_by(Month) %>%
+  dplyr::summarise(
     Mean2030 = mean(Mean2030_Temp),
     Std2030 = sd(Mean2030_Temp),
     Mean2060 = mean(Mean2060_Temp),
     Std2060 = sd(Mean2060_Temp),
     Mean2090 = mean(Mean2090_Temp),
-    Std2090 = sd(Mean2090_Temp)
+    Std2090 = sd(Mean2090_Temp),
   )
 
 # Preview the resulPL3g dataframe
@@ -3546,22 +4478,113 @@ print(monthly_stats_long)
 ggplot(data = monthly_stats_long, aes(x = Month, y = Mean, fill = year))+
   geom_col(position = "dodge")
 
-YFD_85_Mean <- ggplot(data = monthly_stats_long, aes(x = Month, y = Mean, fill = year)) +
+YF_85_Mean <- ggplot(data = monthly_stats_long, aes(x = Month, y = Mean, fill = year)) +
   geom_col(position = "dodge") +
   geom_errorbar(aes(ymin = Mean - Std, ymax = Mean + Std), 
                 position = "dodge") +
-  ggtitle("Yakutat Forelands RCP 8.5") +
-  ylim(-5, 25)+
-  labs(fill = "Year") +
-  theme_bw() +
+  geom_hline(yintercept = 20, color = "red") +
+  ylim(-2,30) +
+  labs(fill = "Year", x = "Month", y = "Mean Forecast Temperature (C)") +
+  theme_classic() +
   theme(legend.text = element_text(size = 14), legend.title = element_text(size = 15),
-        axis.text = element_text(size = 12), axis.title = element_text(size = 13),
-        title = element_text(size = 14), plot.title = element_text(hjust = 0.5))
-YFD_85_Mean
+        axis.text = element_text(size = 14), axis.title = element_text(size = 16))
+YF_85_Mean
 
-ggsave("Plots/YF_85_Mean.jpeg", plot = YFD_85_Mean, width = 9, height = 6)
+ggsave("Output/SNAP/OriginalModel/Rerun/YF_85_Mean.jpeg", plot = YF_85_Mean, width = 9, height = 6)
 ```
 
+```{r}
+PL1_means <- YF_Mean_long %>%
+   filter(Location == "PL1_mean")
+
+mean(PL1_means$Mean2090_Temp)
+
+```
+
+
+# Plot each pond into the future
+```{r}
+YF_85_Mod <- data.frame(date = MP1Mod_total$date)
+
+YF_85_Mod$MP1 <- MP1Mod_total$`50%`
+YF_85_Mod$MP3 <- MP3Mod_total$`50%`
+YF_85_Mod$MP5 <- MP5Mod_total$`50%`
+YF_85_Mod$MP8 <- MP8Mod_total$`50%`
+YF_85_Mod$PL1 <- PL1Mod_total$`50%`
+YF_85_Mod$PL2 <- PL2Mod_total$`50%`
+YF_85_Mod$PL3 <- PL3Mod_total$`50%`
+YF_85_Mod$UBP1 <- UBP1Mod_total$`50%`
+YF_85_Mod$UBP2 <- UBP2Mod_total$`50%`
+YF_85_Mod$UBP3 <- UBP3Mod_total$`50%`
+YF_85_Mod$UBP4 <- UBP4Mod_total$`50%`
+
+ggplot(data = YF_85_Mod, aes(x = date)) +
+  geom_line(aes(y = MP1, color = "#E41A1C")) +
+  geom_line(aes(y = MP3, color = "#377EB8")) +
+  geom_line(aes(y = MP5, color = "#4DAF4A")) +
+  geom_line(aes(y = MP8, color = "#984EA3")) +
+  geom_line(aes(y = PL1, color = "#FF7F00")) +
+  geom_line(aes(y = PL2, color = "#FFFF33")) +
+  geom_line(aes(y = PL3, color = "#A65628")) +
+  geom_line(aes(y = UBP1, color = "#F781BF")) +
+  geom_line(aes(y = UBP2, color = "lightblue")) + 
+  geom_line(aes(y = UBP3, color = "lightgreen")) +
+  geom_line(aes(y = UBP4, color = "#6A3D9A")) +  
+  xlab("Date") +
+  ylab("Temperature (C)") +
+  theme_bw()
+
+
+library(reshape)
+meltdf <- melt(YF_85_Mod, id.vars ="date")
+meltdf <- meltdf %>%
+  dplyr::rename(Pond = variable)
+
+# Define your custom colors
+custom_colors <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", 
+                   "#FFFF33", "#A65628", "#F781BF", "#FF5733", "lightblue", 
+                   "lightgreen")
+
+# Create the plot
+IndPonds_Full_YF85 <- ggplot(data = meltdf, aes(x = date, y = value, color = Pond)) +
+  geom_line(size = 0.3) +
+  facet_wrap(~Pond) +
+  scale_color_manual(values = custom_colors) +
+  theme_bw()
+IndPonds_Full_YF85
+
+ggsave("Output/SNAP/OriginalModel/Rerun/IndPonds_Full_YF85.jpeg", plot = IndPonds_Full_YF85, width = 9, height = 6)
+
+ggplot(data = meltdf, aes(x = date)) +
+  stat_smooth(aes(y = value), size = 0.3) +
+  facet_wrap(~Pond) +
+  theme_bw()
+
+ggplot(data = meltdf, aes(x = date)) +
+  geom_line(aes(y = value), size = 0.3)+
+  theme_bw()
+
+IndPonds_YF85 <- ggplot(data = meltdf, aes(x = date)) +
+  stat_smooth(aes(y = value, color = Pond, fill = Pond), alpha = 0.15, size = 1) +
+  scale_color_manual(values = c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", 
+                                "#FFFF33", "#A65628", "#F781BF", "#FF5733", "lightblue", 
+                                "lightgreen")) +
+  scale_fill_manual(values = c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", 
+                               "#FFFF33", "#A65628", "#F781BF", "#FF5733", "lightblue", 
+                               "lightgreen")) +
+  ggtitle("Mean Annual Temperature") +
+  xlab("Month") +
+  ylab("Temperature (C)") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5, size = 18),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+
+IndPonds_YF85
+
+ggsave("Output/SNAP/OriginalModel/Rerun/IndPonds_YF85.jpeg", plot = IndPonds_YF85, width = 9, height = 6)
+
+```
 
 
 

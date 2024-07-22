@@ -33,7 +33,7 @@ library("hydroGOF")
 ## Start by loading in the Copper River Delta mean data set
 
 ```{r}
-CR_Temps <- read.csv("DataFiles/CR_45SNAPForecast.csv", header=TRUE)
+CR_Temps <- read.csv("CR_45SNAPForecast.csv", header=TRUE)
 
 library(dplyr)
 # remove the first column here and change the column for Date to date
@@ -46,7 +46,7 @@ head(CR_Temps)
 
 ```{r}
 CR_AirTemp <- CR_Temps %>%
-  select(date, Airport, Air_MonthAvg, Region)
+  select(date, Airport, Air_MonthAvg, std, precision, Region)
 
 CR_WaterTemp <- CR_Temps %>%
   select(date, BVS, CAB, TIN, SQR, CAN, EYS, TIS, WDD, RHM)
@@ -147,7 +147,7 @@ model{
   
   #### Process Model
   for(t in 2:n){
-    x[t]~dnorm(k[t],tau_add)
+    x[t] ~ dnorm(k[t],tau_add)
     k[t] <- beta0[1] + beta0[2] * temp[t]
   }
   
@@ -251,7 +251,6 @@ BVSModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `2.5%`)) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = BVS)) +
-  geom_vline()
   geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
@@ -285,7 +284,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/BVS_45_ModelErrorPlot.jpeg", plot = BVSM
 ## Calculating the NSE (Nash-Sutcliffe efficiency) between our modeled/simulated values and the observations
 ```{r}
 BVSMod <- GraphDataOutputCheck
-NSE(BVSMod$`50%`, GraphDataOutputCheck$BVS, na.rm = TRUE)
+write.csv(BVSMod, file = "BVSMod_45.csv", row.names = F)
+
+BVS_NSE <- NSE(BVSMod$`50%`, GraphDataOutputCheck$BVS, na.rm = TRUE)
+BVS_NSE
 
 # filter to data before 2020 for the obs graph?
 BVSMod_total <- BVSMod
@@ -293,6 +295,10 @@ BVSMod_total <- BVSMod
 BVSMod <- BVSMod %>%
   filter(date < "2021-01-01")
 range(BVSMod$date)
+avgBVS2010 <- mean(BVSMod$`50%`)
+avgBVS2010
+stdBVS2010 <- sd(BVSMod$`50%`)
+stdBVS2010
 
 BVSModelErrorPlot <- ggplot(BVSMod, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
@@ -301,12 +307,14 @@ BVSModelErrorPlot <- ggplot(BVSMod, mapping = aes(date)) +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = BVS)) +
   ggtitle("BVS - Copper River Delta")+
-  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.926")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.928")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 BVSModelErrorPlot
 
 ggsave("Output/SNAP/OriginalModel/Rerun/BVS_ObsModelPlot_45.jpeg", plot = BVSModelErrorPlot, width = 8, height = 6)
@@ -320,6 +328,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/BVS_ObsModelPlot_45.jpeg", plot = BVSMod
 # filtering for 2030s
 BVS_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
+avgBVS2030 <- mean(BVS_2030$`50%`)
+avgBVS2030
+stdBVS2030 <- sd(BVS_2030$`50%`)
+stdBVS2030
 
 # Now you can use this data frame with ggplot2
 BVS_2030_ModelPlot <- ggplot(BVS_2030) +
@@ -358,6 +370,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/BVS_2030_45_ModelErrorPlot.jpeg", plot =
 # filtering for 2030s
 BVS_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
+avgBVS2060 <- mean(BVS_2060$`50%`)
+avgBVS2060
+stdBVS2060 <- sd(BVS_2060$`50%`)
+stdBVS2060
 
 # Now you can use this data frame with ggplot2
 BVS_2060_ModelPlot <- ggplot(BVS_2060) +
@@ -396,6 +412,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/BVS_2060_45_ModelErrorPlot.jpeg", plot =
 # filtering for 2030s
 BVS_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
+avgBVS2090 <- mean(BVS_2090$`50%`)
+avgBVS2090
+stdBVS2090 <- sd(BVS_2090$`50%`)
+stdBVS2090
 
 # Now you can use this data frame with ggplot2
 BVS_2090_ModelPlot <- ggplot(BVS_2090) +
@@ -581,11 +601,14 @@ CABModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = CAB)) +
   ggtitle("CAB - Copper River Delta - RCP 4.5")+
-  ylim(-10,30)+
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 CABModelPlot
 
 CABModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -595,19 +618,27 @@ CABModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = CAB)) +
   ggtitle("CAB - Copper River Delta - RCP 4.5")+
-  ylim(-10,30)+
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 CABModelErrorPlot
 
 ggsave("Output/SNAP/OriginalModel/Rerun/CAB_45_ModelPlot.jpeg", plot = CABModelPlot, width = 8, height = 6)
 ggsave("Output/SNAP/OriginalModel/Rerun/CAB_45_ModelErrorPlot.jpeg", plot = CABModelErrorPlot, width = 8, height = 6)
 ```
+
+## Calculating the NSE
 ```{r}
 CABMod <- GraphDataOutputCheck
-NSE(CABMod$`50%`, CABMod$CAB, na.rm = TRUE)
+write.csv(CABMod, file = "CABMod_45.csv", row.names = F)
+
+CAB_NSE <- NSE(CABMod$`50%`, CABMod$CAB, na.rm = TRUE)
+CAB_NSE
 
 # filter to data before 2020 for the obs graph?
 CABMod_total <- CABMod
@@ -615,6 +646,10 @@ CABMod_total <- CABMod
 CABMod <- CABMod %>%
   filter(date < "2021-01-01")
 range(CABMod$date)
+avgCAB2010 <- mean(CABMod$`50%`)
+avgCAB2010
+stdCAB2010 <- sd(CABMod$`50%`)
+stdCAB2010
 
 CABModelErrorPlot <- ggplot(CABMod, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
@@ -623,7 +658,7 @@ CABModelErrorPlot <- ggplot(CABMod, mapping = aes(date)) +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = CAB)) +
   ggtitle("CAB - Copper River Delta")+
-  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.972")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.973")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
@@ -641,6 +676,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/CAB_ObsModelPlot_45.jpeg", plot = CABMod
 # filtering for 2030s
 CAB_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
+avgCAB2030 <- mean(CAB_2030$`50%`)
+avgCAB2030
+stdCAB2030 <- sd(CAB_2030$`50%`)
+stdCAB2030
 
 # Now you can use this data frame with ggplot2
 CAB_2030_ModelPlot <- ggplot(CAB_2030) +
@@ -679,6 +718,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/CAB_2030_45_ModelErrorPlot.jpeg", plot =
 # filtering for 2030s
 CAB_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
+avgCAB2060 <- mean(CAB_2060$`50%`)
+avgCAB2060
+stdCAB2060 <- sd(CAB_2060$`50%`)
+stdCAB2060
 
 # Now you can use this data frame with ggplot2
 CAB_2060_ModelPlot <- ggplot(CAB_2060) +
@@ -717,6 +760,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/CAB_2060_45_ModelErrorPlot.jpeg", plot =
 # filtering for 2030s
 CAB_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
+avgCAB2090 <- mean(CAB_2090$`50%`)
+avgCAB2090
+stdCAB2090 <- sd(CAB_2090$`50%`)
+stdCAB2090
 
 # Now you can use this data frame with ggplot2
 CAB_2090_ModelPlot <- ggplot(CAB_2090) +
@@ -929,11 +976,15 @@ CANModelErrorPlot
 
 ggsave("Output/SNAP/OriginalModel/Rerun/CAN_45_ModelPlot.jpeg", plot = CANModelPlot, width = 8, height = 6)
 ggsave("Output/SNAP/OriginalModel/Rerun/CAN_45_ModelErrorPlot.jpeg", plot = CANModelErrorPlot, width = 8, height = 6)
+1
 ```
 ## Getting the NSE Values
 ```{r}
 CANMod <- GraphDataOutputCheck
-NSE(CANMod$`50%`, CANMod$CAN, na.rm = TRUE)
+write.csv(CANMod, file = "CANMod_45.csv", row.names = F)
+
+CAN_NSE <- NSE(CANMod$`50%`, CANMod$CAN, na.rm = TRUE)
+CAN_NSE
 
 # filter to data before 2020 for the obs graph?
 CANMod_total <- CANMod
@@ -941,6 +992,10 @@ CANMod_total <- CANMod
 CANMod <- CANMod %>%
   filter(date < "2021-01-01")
 range(CANMod$date)
+avgCAN2010 <- mean(CANMod$`50%`)
+avgCAN2010
+stdCAN2010 <- sd(CANMod$`50%`)
+stdCAN2010
 
 CANModelErrorPlot <- ggplot(CANMod, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
@@ -967,6 +1022,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/CAN_ObsModelPlot_45.jpeg", plot = CANMod
 # filtering for 2030s
 CAN_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
+avgCAN2030 <- mean(CAN_2030$`50%`)
+avgCAN2030
+stdCAN2030 <- sd(CAN_2030$`50%`)
+stdCAN2030
 
 # Now you can use this data frame with ggplot2
 CAN_2030_ModelPlot <- ggplot(CAN_2030) +
@@ -1005,6 +1064,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/CAN_2030_45_ModelErrorPlot.jpeg", plot =
 # filtering for 2030s
 CAN_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
+avgCAN2060 <- mean(CAN_2060$`50%`)
+avgCAN2060
+stdCAN2060 <- sd(CAN_2060$`50%`)
+stdCAN2060
 
 # Now you can use this data frame with ggplot2
 CAN_2060_ModelPlot <- ggplot(CAN_2060) +
@@ -1043,6 +1106,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/CAN_2060_45_ModelErrorPlot.jpeg", plot =
 # filtering for 2030s
 CAN_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
+avgCAN2090 <- mean(CAN_2090$`50%`)
+avgCAN2090
+stdCAN2090 <- sd(CAN_2090$`50%`)
+stdCAN2090
 
 # Now you can use this data frame with ggplot2
 CAN_2090_ModelPlot <- ggplot(CAN_2090) +
@@ -1260,7 +1327,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/EYS_45_ModelErrorPlot.jpeg", plot = EYSM
 ## Getting the NSE Values
 ```{r}
 EYSMod <- GraphDataOutputCheck
-NSE(EYSMod$`50%`, EYSMod$EYS, na.rm = TRUE)
+write.csv(EYSMod, file = "EYSMod_45.csv", row.names = F)
+
+EYS_NSE <- NSE(EYSMod$`50%`, EYSMod$EYS, na.rm = TRUE)
+EYS_NSE
 
 # filter to data before 2020 for the obs graph?
 EYSMod_total <- EYSMod
@@ -1268,6 +1338,10 @@ EYSMod_total <- EYSMod
 EYSMod <- EYSMod %>%
   filter(date < "2021-01-01")
 range(EYSMod$date)
+avgEYS2010 <- mean(EYSMod$`50%`)
+avgEYS2010
+stdEYS2010 <- sd(EYSMod$`50%`)
+stdEYS2010
 
 EYSModelErrorPlot <- ggplot(EYSMod, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
@@ -1276,7 +1350,7 @@ EYSModelErrorPlot <- ggplot(EYSMod, mapping = aes(date)) +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = EYS)) +
   ggtitle("EYS - Copper River Delta - RCP 4.5")+
-  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.973")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.972")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
@@ -1295,6 +1369,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/EYS_ObsModelPlot_45.jpeg", plot = EYSMod
 # filtering for 2030s
 EYS_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
+avgEYS2030 <- mean(EYS_2030$`50%`)
+avgEYS2030
+stdEYS2030 <- sd(EYS_2030$`50%`)
+stdEYS2030
 
 # Now you can use this data frame with ggplot2
 EYS_2030_ModelPlot <- ggplot(EYS_2030) +
@@ -1333,6 +1411,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/EYS_2030_45_ModelErrorPlot.jpeg", plot =
 # filtering for 2030s
 EYS_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
+avgEYS2060 <- mean(EYS_2060$`50%`)
+avgEYS2060
+stdEYS2060 <- sd(EYS_2060$`50%`)
+stdEYS2060
 
 # Now you can use this data frame with ggplot2
 EYS_2060_ModelPlot <- ggplot(EYS_2060) +
@@ -1371,6 +1453,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/EYS_2060_45_ModelErrorPlot.jpeg", plot =
 # filtering for 2030s
 EYS_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
+avgEYS2090 <- mean(EYS_2090$`50%`)
+avgEYS2090
+stdEYS2090 <- sd(EYS_2090$`50%`)
+stdEYS2090
 
 # Now you can use this data frame with ggplot2
 EYS_2090_ModelPlot <- ggplot(EYS_2090) +
@@ -1587,7 +1673,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/RHM_45_ModelErrorPlot.jpeg", plot = RHM_
 ## Getting the NSE Values
 ```{r}
 RHMMod <- GraphDataOutputCheck
-NSE(RHMMod$`50%`, RHMMod$RHM, na.rm = TRUE)
+write.csv(RHMMod, file = "RHMMod_45.csv", row.names = F)
+
+RHM_NSE <- NSE(RHMMod$`50%`, RHMMod$RHM, na.rm = TRUE)
+RHM_NSE
 
 # filter to data before 2020 for the obs graph?
 RHMMod_total <- RHMMod
@@ -1595,6 +1684,10 @@ RHMMod_total <- RHMMod
 RHMMod <- RHMMod %>%
   filter(date < "2021-01-01")
 range(RHMMod$date)
+avgRHM2010 <- mean(RHMMod$`50%`)
+avgRHM2010
+stdRHM2010 <- sd(RHMMod$`50%`)
+stdRHM2010
 
 RHMModelErrorPlot <- ggplot(RHMMod, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
@@ -1621,6 +1714,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/RHM_ObsModelPlot_45.jpeg", plot = RHMMod
 # filtering for 2030s
 RHM_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
+avgRHM2030 <- mean(RHM_2030$`50%`)
+avgRHM2030
+stdRHM2030 <- sd(RHM_2030$`50%`)
+stdRHM2030
 
 # Now you can use this data frame with ggplot2
 RHM_2030_ModelPlot <- ggplot(RHM_2030) +
@@ -1642,7 +1739,6 @@ RHM_2030_ModelErrorPlot <- ggplot(RHM_2030, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = RHM)) +
-  geom_hline(yintercept = 7.652023, linetype = "dashed", color = "red", size = 1.5) +  # Add horizontal line for the SFS presentation
   ggtitle("RHM - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
@@ -1660,6 +1756,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/RHM_2030_45_ModelErrorPlot.jpeg", plot =
 # filtering for 2030s
 RHM_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
+avgRHM2060 <- mean(RHM_2060$`50%`)
+avgRHM2060
+stdRHM2060 <- sd(RHM_2060$`50%`)
+stdRHM2060
 
 # Now you can use this data frame with ggplot2
 RHM_2060_ModelPlot <- ggplot(RHM_2060) +
@@ -1681,7 +1781,6 @@ RHM_2060_ModelErrorPlot <- ggplot(RHM_2060, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = RHM)) +
-  geom_hline(yintercept = 8.345756, linetype = "dashed", color = "red", size = 1.5) +  # Add horizontal line for the SFS presentation
   ggtitle("RHM - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
@@ -1699,6 +1798,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/RHM_2060_45_ModelErrorPlot.jpeg", plot =
 # filtering for 2030s
 RHM_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
+avgRHM2090 <- mean(RHM_2090$`50%`)
+avgRHM2090
+stdRHM2090 <- sd(RHM_2090$`50%`)
+stdRHM2090
 
 # Now you can use this data frame with ggplot2
 RHM_2090_ModelPlot <- ggplot(RHM_2090) +
@@ -1720,7 +1823,6 @@ RHM_2090_ModelErrorPlot <- ggplot(RHM_2090, mapping = aes(date)) +
   geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = RHM)) +
-  geom_hline(yintercept = 8.815792, linetype = "dashed", color = "red", size = 1.5) +  # Add horizontal line for the SFS presentation
   ggtitle("RHM - Copper River Delta - RCP 4.5")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
@@ -1917,7 +2019,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/SQR_45_ModelErrorPlot.jpeg", plot = SQR_
 ## Getting the NSE Values
 ```{r}
 SQRMod <- GraphDataOutputCheck
-NSE(SQRMod$`50%`, SQRMod$SQR, na.rm = TRUE)
+write.csv(SQRMod, file = "SQRMod_45.csv", row.names = F)
+
+SQR_NSE <- NSE(SQRMod$`50%`, SQRMod$SQR, na.rm = TRUE)
+SQR_NSE
 
 # filter to data before 2020 for the obs graph?
 SQRMod_total <- SQRMod
@@ -1925,6 +2030,10 @@ SQRMod_total <- SQRMod
 SQRMod <- SQRMod %>%
   filter(date < "2021-01-01")
 range(SQRMod$date)
+avgSQR2010 <- mean(SQRMod$`50%`)
+avgSQR2010
+stdSQR2010 <- sd(SQRMod$`50%`)
+stdSQR2010
 
 SQRModelErrorPlot <- ggplot(SQRMod, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
@@ -1933,7 +2042,7 @@ SQRModelErrorPlot <- ggplot(SQRMod, mapping = aes(date)) +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = SQR)) +
   ggtitle("SQR - Copper River Delta")+
-  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.971")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.976")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
@@ -1952,6 +2061,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/SQR_ObsModelPlot_45.jpeg", plot = SQRMod
 # filtering for 2030s
 SQR_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
+avgSQR2030 <- mean(SQR_2030$`50%`)
+avgSQR2030
+stdSQR2030 <- sd(SQR_2030$`50%`)
+stdSQR2030
 
 # Now you can use this data frame with ggplot2
 SQR_2030_ModelPlot <- ggplot(SQR_2030) +
@@ -1990,6 +2103,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/SQR_2030_45_ModelErrorPlot.jpeg", plot =
 # filtering for 2030s
 SQR_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
+avgSQR2060 <- mean(SQR_2060$`50%`)
+avgSQR2060
+stdSQR2060 <- sd(SQR_2060$`50%`)
+stdSQR2060
 
 # Now you can use this data frame with ggplot2
 SQR_2060_ModelPlot <- ggplot(SQR_2060) +
@@ -2028,6 +2145,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/SQR_2060_45_ModelErrorPlot.jpeg", plot =
 # filtering for 2030s
 SQR_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
+avgSQR2090 <- mean(SQR_2090$`50%`)
+avgSQR2090
+stdSQR2090 <- sd(SQR_2090$`50%`)
+stdSQR2090
 
 # Now you can use this data frame with ggplot2
 SQR_2090_ModelPlot <- ggplot(SQR_2090) +
@@ -2213,11 +2334,14 @@ TIN_45_ModelPlot <- ggplot(GraphDataOutputCheck) +
   geom_line(aes(x = date, y = `97.5%`)) +
   geom_point(aes(x = date, y = TIN)) +
   ggtitle("TIN - Copper River Delta - RCP 4.5")+
-  ylim(-10,30) +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 TIN_45_ModelPlot
 
 TIN_45_ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
@@ -2227,11 +2351,14 @@ TIN_45_ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = TIN)) +
   ggtitle("TIN - Copper River Delta - RCP 4.5")+
-  ylim(-10,30) +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
-  xlab("Date") +
+  xlab("Year") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 TIN_45_ModelErrorPlot
 
 ggsave("Output/SNAP/OriginalModel/Rerun/TIN_45_ModelPlot.jpeg", plot = TIN_45_ModelPlot, width = 8, height = 6)
@@ -2241,7 +2368,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/TIN_45_ModelErrorPlot.jpeg", plot = TIN_
 ## Getting the NSE Values
 ```{r}
 TINMod <- GraphDataOutputCheck
-NSE(TINMod$`50%`, TINMod$TIN, na.rm = TRUE)
+write.csv(TINMod, file = "TINMod_45.csv", row.names = F)
+
+TIN_NSE <- NSE(TINMod$`50%`, TINMod$TIN, na.rm = TRUE)
+TIN_NSE
 
 # filter to data before 2020 for the obs graph?
 TINMod_total <- TINMod
@@ -2249,6 +2379,10 @@ TINMod_total <- TINMod
 TINMod <- TINMod %>%
   filter(date < "2021-01-01")
 range(TINMod$date)
+avgTIN2010 <- mean(TINMod$`50%`)
+avgTIN2010
+stdTIN2010 <- sd(TINMod$`50%`)
+stdTIN2010
 
 TINModelErrorPlot <- ggplot(TINMod, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
@@ -2257,7 +2391,7 @@ TINModelErrorPlot <- ggplot(TINMod, mapping = aes(date)) +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = TIN)) +
   ggtitle("TIN - Copper River Delta")+
-  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.971")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.973")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
@@ -2276,6 +2410,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/TIN_ObsModelPlot_45.jpeg", plot = TINMod
 # filtering for 2030s
 TIN_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
+avgTIN2030 <- mean(TIN_2030$`50%`)
+avgTIN2030
+stdTIN2030 <- sd(TIN_2030$`50%`)
+stdTIN2030
 
 # Now you can use this data frame with ggplot2
 TIN_2030_ModelPlot <- ggplot(TIN_2030) +
@@ -2314,6 +2452,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/TIN_2030_45_ModelErrorPlot.jpeg", plot =
 # filtering for 2030s
 TIN_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
+avgTIN2060 <- mean(TIN_2060$`50%`)
+avgTIN2060
+stdTIN2060 <- sd(TIN_2060$`50%`)
+stdTIN2060
 
 # Now you can use this data frame with ggplot2
 TIN_2060_ModelPlot <- ggplot(TIN_2060) +
@@ -2352,6 +2494,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/TIN_2060_45_ModelErrorPlot.jpeg", plot =
 # filtering for 2030s
 TIN_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
+avgTIN2090 <- mean(TIN_2090$`50%`)
+avgTIN2090
+stdTIN2090 <- sd(TIN_2090$`50%`)
+stdTIN2090
 
 # Now you can use this data frame with ggplot2
 TIN_2090_ModelPlot <- ggplot(TIN_2090) +
@@ -2569,7 +2715,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/TIS_45_ModelErrorPlot.jpeg", plot = TISM
 ## Getting the NSE Values
 ```{r}
 TISMod <- GraphDataOutputCheck
-NSE(TISMod$`50%`, TISMod$TIS, na.rm = TRUE)
+write.csv(TISMod, file = "TISMod_45.csv", row.names = F)
+
+TIS_NSE <- NSE(TISMod$`50%`, TISMod$TIS, na.rm = TRUE)
+TIS_NSE
 
 # filter to data before 2020 for the obs graph?
 TISMod_total <- TISMod
@@ -2577,6 +2726,10 @@ TISMod_total <- TISMod
 TISMod <- TISMod %>%
   filter(date < "2021-01-01")
 range(TISMod$date)
+avgTIS2010 <- mean(TISMod$`50%`)
+avgTIN2010
+stdTIS2010 <- sd(TISMod$`50%`)
+stdTIS2010
 
 TISModelErrorPlot <- ggplot(TISMod, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
@@ -2585,7 +2738,7 @@ TISModelErrorPlot <- ggplot(TISMod, mapping = aes(date)) +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = TIS)) +
   ggtitle("TIS - Copper River Delta")+
-  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.945")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.982")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
@@ -2604,6 +2757,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/TIS_ObsModelPlot_45.jpeg", plot = TISMod
 # filtering for 2030s
 TIS_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
+avgTIS2030 <- mean(TIS_2030$`50%`)
+avgTIS2030
+stdTIS2030 <- sd(TIS_2030$`50%`)
+stdTIS2030
 
 # Now you can use this data frame with ggplot2
 TIS_2030_ModelPlot <- ggplot(TIS_2030) +
@@ -2642,6 +2799,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/TIS_2030_45_ModelErrorPlot.jpeg", plot =
 # filtering for 2030s
 TIS_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
+avgTIS2060 <- mean(TIS_2060$`50%`)
+avgTIS2060
+stdTIS2060 <- sd(TIS_2060$`50%`)
+stdTIS2060
 
 # Now you can use this data frame with ggplot2
 TIS_2060_ModelPlot <- ggplot(TIS_2060) +
@@ -2680,6 +2841,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/TIS_2060_45_ModelErrorPlot.jpeg", plot =
 # filtering for 2030s
 TIS_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
+avgTIS2090 <- mean(TIS_2090$`50%`)
+avgTIS2090
+stdTIS2090 <- sd(TIS_2090$`50%`)
+stdTIS2090
 
 # Now you can use this data frame with ggplot2
 TIS_2090_ModelPlot <- ggplot(TIS_2090) +
@@ -2898,7 +3063,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/WDD_45_ModelErrorPlot.jpeg", plot = WDDM
 ## Getting the NSE Values
 ```{r}
 WDDMod <- GraphDataOutputCheck
-NSE(WDDMod$`50%`, WDDMod$WDD, na.rm = TRUE)
+write.csv(WDDMod, file = "WDDMod_45.csv", row.names = F)
+
+WDD_NSE <- NSE(WDDMod$`50%`, WDDMod$WDD, na.rm = TRUE)
+WDD_NSE
 
 # filter to data before 2020 for the obs graph?
 WDDMod_total <- WDDMod
@@ -2906,6 +3074,10 @@ WDDMod_total <- WDDMod
 WDDMod <- WDDMod %>%
   filter(date < "2021-01-01")
 range(WDDMod$date)
+avgWDD2010 <- mean(WDDMod$`50%`)
+avgWDD2010
+stdWDD2010 <- sd(WDDMod$`50%`)
+stdWDD2010
 
 WDDModelErrorPlot <- ggplot(WDDMod, mapping = aes(date)) +
   geom_line(mapping = aes(y = `2.5%`)) +
@@ -2914,7 +3086,7 @@ WDDModelErrorPlot <- ggplot(WDDMod, mapping = aes(date)) +
   geom_line(aes(x = date, y = `50%`), color = "black") +
   geom_point(aes(x = date, y = WDD)) +
   ggtitle("WDD - Copper River Delta")+
-  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.917")+
+  annotate("text", x = as.Date("2020-01-01"), y = 25, label = "NSE = 0.983")+
   ylim(c(-10, 30))+
   ylab("Temeprature (C)") +
   xlab("Year") +
@@ -2932,6 +3104,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/WDD_ObsModelPlot_45.jpeg", plot = WDDMod
 # filtering for 2030s
 WDD_2030 <- GraphDataOutputCheck %>%
   filter(date > "2029-12-01" & date < "2040-01-01")
+avgWDD2030 <- mean(WDD_2030$`50%`)
+avgWDD2030
+stdWDD2030 <- sd(WDD_2030$`50%`)
+stdWDD2030
 
 # Now you can use this data frame with ggplot2
 WDD_2030_ModelPlot <- ggplot(WDD_2030) +
@@ -2970,6 +3146,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/WDD_2030_45_ModelErrorPlot.jpeg", plot =
 # filtering for 2030s
 WDD_2060 <- GraphDataOutputCheck %>%
   filter(date > "2059-12-01" & date < "2070-01-01")
+avgWDD2060 <- mean(WDD_2060$`50%`)
+avgWDD2060
+stdWDD2060 <- sd(WDD_2060$`50%`)
+stdWDD2060
 
 # Now you can use this data frame with ggplot2
 WDD_2060_ModelPlot <- ggplot(WDD_2060) +
@@ -3008,6 +3188,10 @@ ggsave("Output/SNAP/OriginalModel/Rerun/WDD_2060_45_ModelErrorPlot.jpeg", plot =
 # filtering for 2030s
 WDD_2090 <- GraphDataOutputCheck %>%
   filter(date > "2089-12-01" & date < "2100-01-01")
+avgWDD2090 <- mean(WDD_2090$`50%`)
+avgWDD2090
+stdWDD2090 <- sd(WDD_2090$`50%`)
+stdWDD2090
 
 # Now you can use this data frame with ggplot2
 WDD_2090_ModelPlot <- ggplot(WDD_2090) +
@@ -3051,20 +3235,20 @@ ggsave("Output/SNAP/OriginalModel/Rerun/WDD_2090_45_ModelErrorPlot.jpeg", plot =
 ```{r}
 # setting up the dataframe here
 
-CR_45_2030 <- BVS_2030[0,]
+CR_45_2030 <- BVS_2030
 str(CR_45_2030)
 
 CR_45_2030 <- CR_45_2030 %>%
   select(date, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD) %>%
-  rename(BVS_min = BVS) %>%
-  rename(CAB_min = CAB) %>%
-  rename(CAN_min = CAN) %>%
-  rename(EYS_min = EYS) %>%
-  rename(RHM_min = RHM) %>%
-  rename(SQR_min = SQR) %>%
-  rename(TIN_min = TIN) %>%
-  rename(TIS_min = TIS) %>%
-  rename(WDD_min = WDD) 
+  dplyr::rename(BVS_min = BVS) %>%
+  dplyr::rename(CAB_min = CAB) %>%
+  dplyr::rename(CAN_min = CAN) %>%
+  dplyr::rename(EYS_min = EYS) %>%
+  dplyr::rename(RHM_min = RHM) %>%
+  dplyr::rename(SQR_min = SQR) %>%
+  dplyr::rename(TIN_min = TIN) %>%
+  dplyr::rename(TIS_min = TIS) %>%
+  dplyr::rename(WDD_min = WDD) 
 str(CR_45_2030)
 
 attr(CR_45_2030, 'row.names') <- 1:nrow(BVS_2030)
@@ -3108,15 +3292,15 @@ str(CR_45_2030)
 
 CR_45_2030 <- CR_45_2030 %>%
   select(date, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD) %>%
-  rename(BVS_mean = BVS) %>%
-  rename(CAB_mean = CAB) %>%
-  rename(CAN_mean = CAN) %>%
-  rename(EYS_mean = EYS) %>%
-  rename(RHM_mean = RHM) %>%
-  rename(SQR_mean = SQR) %>%
-  rename(TIN_mean = TIN) %>%
-  rename(TIS_mean = TIS) %>%
-  rename(WDD_mean = WDD) 
+  dplyr::rename(BVS_mean = BVS) %>%
+  dplyr::rename(CAB_mean = CAB) %>%
+  dplyr::rename(CAN_mean = CAN) %>%
+  dplyr::rename(EYS_mean = EYS) %>%
+  dplyr::rename(RHM_mean = RHM) %>%
+  dplyr::rename(SQR_mean = SQR) %>%
+  dplyr::rename(TIN_mean = TIN) %>%
+  dplyr::rename(TIS_mean = TIS) %>%
+  dplyr::rename(WDD_mean = WDD) 
 str(CR_45_2030)
 
 attr(CR_45_2030, 'row.names') <- 1:nrow(BVS_2030)
@@ -3160,15 +3344,15 @@ str(CR_45_2030)
 
 CR_45_2030 <- CR_45_2030 %>%
   select(date, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD) %>%
-  rename(BVS_max = BVS) %>%
-  rename(CAB_max = CAB) %>%
-  rename(CAN_max = CAN) %>%
-  rename(EYS_max = EYS) %>%
-  rename(RHM_max = RHM) %>%
-  rename(SQR_max = SQR) %>%
-  rename(TIN_max = TIN) %>%
-  rename(TIS_max = TIS) %>%
-  rename(WDD_max = WDD) 
+  dplyr::rename(BVS_max = BVS) %>%
+  dplyr::rename(CAB_max = CAB) %>%
+  dplyr::rename(CAN_max = CAN) %>%
+  dplyr::rename(EYS_max = EYS) %>%
+  dplyr::rename(RHM_max = RHM) %>%
+  dplyr::rename(SQR_max = SQR) %>%
+  dplyr::rename(TIN_max = TIN) %>%
+  dplyr::rename(TIS_max = TIS) %>%
+  dplyr::rename(WDD_max = WDD) 
 str(CR_45_2030)
 
 attr(CR_45_2030, 'row.names') <- 1:nrow(BVS_2030)
@@ -3374,15 +3558,15 @@ str(CR_45_2030)
 
 CR_45_2030 <- CR_45_2030 %>%
   select(date, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD) %>%
-  rename(BVS_mean = BVS) %>%
-  rename(CAB_mean = CAB) %>%
-  rename(CAN_mean = CAN) %>%
-  rename(EYS_mean = EYS) %>%
-  rename(RHM_mean = RHM) %>%
-  rename(SQR_mean = SQR) %>%
-  rename(TIN_mean = TIN) %>%
-  rename(TIS_mean = TIS) %>%
-  rename(WDD_mean = WDD) 
+  dplyr::rename(BVS_mean = BVS) %>%
+  dplyr::rename(CAB_mean = CAB) %>%
+  dplyr::rename(CAN_mean = CAN) %>%
+  dplyr::rename(EYS_mean = EYS) %>%
+  dplyr::rename(RHM_mean = RHM) %>%
+  dplyr::rename(SQR_mean = SQR) %>%
+  dplyr::rename(TIN_mean = TIN) %>%
+  dplyr::rename(TIS_mean = TIS) %>%
+  dplyr::rename(WDD_mean = WDD) 
 str(CR_45_2030)
 
 attr(CR_45_2030, 'row.names') <- 1:nrow(BVS_2030)
@@ -3426,15 +3610,15 @@ str(CR_45_2060)
 
 CR_45_2060 <- CR_45_2060 %>%
   select(date, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD) %>%
-  rename(BVS_mean = BVS) %>%
-  rename(CAB_mean = CAB) %>%
-  rename(CAN_mean = CAN) %>%
-  rename(EYS_mean = EYS) %>%
-  rename(RHM_mean = RHM) %>%
-  rename(SQR_mean = SQR) %>%
-  rename(TIN_mean = TIN) %>%
-  rename(TIS_mean = TIS) %>%
-  rename(WDD_mean = WDD) 
+  dplyr::rename(BVS_mean = BVS) %>%
+  dplyr::rename(CAB_mean = CAB) %>%
+  dplyr::rename(CAN_mean = CAN) %>%
+  dplyr::rename(EYS_mean = EYS) %>%
+  dplyr::rename(RHM_mean = RHM) %>%
+  dplyr::rename(SQR_mean = SQR) %>%
+  dplyr::rename(TIN_mean = TIN) %>%
+  dplyr::rename(TIS_mean = TIS) %>%
+  dplyr::rename(WDD_mean = WDD) 
 str(CR_45_2060)
 
 attr(CR_45_2060, 'row.names') <- 1:nrow(BVS_2030)
@@ -3479,15 +3663,15 @@ str(CR_45_2090)
 
 CR_45_2090 <- CR_45_2090 %>%
   select(date, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD) %>%
-  rename(BVS_mean = BVS) %>%
-  rename(CAB_mean = CAB) %>%
-  rename(CAN_mean = CAN) %>%
-  rename(EYS_mean = EYS) %>%
-  rename(RHM_mean = RHM) %>%
-  rename(SQR_mean = SQR) %>%
-  rename(TIN_mean = TIN) %>%
-  rename(TIS_mean = TIS) %>%
-  rename(WDD_mean = WDD) 
+  dplyr::rename(BVS_mean = BVS) %>%
+  dplyr::rename(CAB_mean = CAB) %>%
+  dplyr::rename(CAN_mean = CAN) %>%
+  dplyr::rename(EYS_mean = EYS) %>%
+  dplyr::rename(RHM_mean = RHM) %>%
+  dplyr::rename(SQR_mean = SQR) %>%
+  dplyr::rename(TIN_mean = TIN) %>%
+  dplyr::rename(TIS_mean = TIS) %>%
+  dplyr::rename(WDD_mean = WDD) 
 str(CR_45_2090)
 
 attr(CR_45_2090, 'row.names') <- 1:nrow(BVS_2090)
@@ -3526,17 +3710,16 @@ rm(test, test_long)
 ####Getting monthly stats
 
 ```{r}
-# Assuming your dataframe is named 'CRD_Mean_long'
 monthly_stats <- CRD_Mean_long %>%
-  mutate(Month = format(date, "%m")) %>%
-  group_by(Month) %>%
-  summarize(
+  dplyr::mutate(Month = format(date, "%m")) %>%
+  dplyr::group_by(Month) %>%
+  dplyr::summarise(
     Mean2030 = mean(Mean2030_Temp),
     Std2030 = sd(Mean2030_Temp),
     Mean2060 = mean(Mean2060_Temp),
     Std2060 = sd(Mean2060_Temp),
     Mean2090 = mean(Mean2090_Temp),
-    Std2090 = sd(Mean2090_Temp)
+    Std2090 = sd(Mean2090_Temp),
   )
 
 # Preview the resulting dataframe
@@ -3558,13 +3741,12 @@ CRD_45_Mean <- ggplot(data = monthly_stats_long, aes(x = Month, y = Mean, fill =
   geom_col(position = "dodge") +
   geom_errorbar(aes(ymin = Mean - Std, ymax = Mean + Std), 
                 position = "dodge") +
-  ggtitle("Copper River Delta RCP 4.5") +
+  geom_hline(yintercept = 20, color = "red") +
   ylim(0,30) +
-  labs(fill = "Year") +
-  theme_bw() +
+  labs(fill = "Year", x = "Month", y = "Mean Forecast Temperature (C)") +
+  theme_classic() +
   theme(legend.text = element_text(size = 14), legend.title = element_text(size = 15),
-        axis.text = element_text(size = 12), axis.title = element_text(size = 13),
-        title = element_text(size = 14), plot.title = element_text(hjust = 0.5))
+        axis.text = element_text(size = 14), axis.title = element_text(size = 16))
 CRD_45_Mean
 
 ggsave("Output/SNAP/OriginalModel/Rerun/CRD_45_Mean.jpeg", plot = CRD_45_Mean, width = 9, height = 6)
@@ -3581,19 +3763,19 @@ mean(RHM_means$Mean2090_Temp)
 
 # Plot each pond into the future
 ```{r}
-CRD_45_Mod <- data.frame(date = BVSMod_total$date)
+CR_45_Mod <- data.frame(date = BVSMod_total$date)
 
-CRD_45_Mod$BVS <- BVSMod_total$`50%`
-CRD_45_Mod$CAB <- CABMod_total$`50%`
-CRD_45_Mod$CAN <- CANMod_total$`50%`
-CRD_45_Mod$EYS <- EYSMod_total$`50%`
-CRD_45_Mod$RHM <- RHMMod_total$`50%`
-CRD_45_Mod$SQR <- SQRMod_total$`50%`
-CRD_45_Mod$TIN <- TINMod_total$`50%`
-CRD_45_Mod$TIS <- TISMod_total$`50%`
-CRD_45_Mod$WDD <- WDDMod_total$`50%`
+CR_45_Mod$BVS <- BVSMod_total$`50%`
+CR_45_Mod$CAB <- CABMod_total$`50%`
+CR_45_Mod$CAN <- CANMod_total$`50%`
+CR_45_Mod$EYS <- EYSMod_total$`50%`
+CR_45_Mod$RHM <- RHMMod_total$`50%`
+CR_45_Mod$SQR <- SQRMod_total$`50%`
+CR_45_Mod$TIN <- TINMod_total$`50%`
+CR_45_Mod$TIS <- TISMod_total$`50%`
+CR_45_Mod$WDD <- WDDMod_total$`50%`
 
-ggplot(data = CRD_45_Mod, aes(x = date)) +
+ggplot(data = CR_45_Mod, aes(x = date)) +
   geom_line(aes(y = BVS, color = "#E41A1C")) +
   geom_line(aes(y = CAB, color = "#377EB8")) +
   geom_line(aes(y = CAN, color = "#4DAF4A")) +
@@ -3602,38 +3784,59 @@ ggplot(data = CRD_45_Mod, aes(x = date)) +
   geom_line(aes(y = SQR, color = "#FFFF33")) +
   geom_line(aes(y = TIN, color = "#A65628")) +
   geom_line(aes(y = TIS, color = "#F781BF")) +
-  geom_line(aes(y = WDD, color = "#999999")) + 
+  geom_line(aes(y = WDD, color = "lightblue")) +
   xlab("Date") +
   ylab("Temperature (C)") +
   theme_bw()
 
+
 library(reshape)
-meltdf <- melt(CRD_45_Mod, id.vars ="date")
+meltdf <- melt(CR_45_Mod, id.vars ="date")
 meltdf <- meltdf %>%
   dplyr::rename(Pond = variable)
 
-ggplot(data = meltdf, aes(x = date)) +
-  geom_line(aes(y = value), size = 0.3) +
-  facet_wrap(~variable) +
+# Define your custom colors
+custom_colors <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", 
+                   "#FFFF33", "#A65628", "#F781BF", "lightblue")
+
+# CReate the plot
+IndPonds_Full_CR45 <- ggplot(data = meltdf, aes(x = date, y = value, color = Pond)) +
+  geom_line(size = 0.3) +
+  facet_wrap(~Pond) +
+  scale_color_manual(values = custom_colors) +
   theme_bw()
+IndPonds_Full_CR45
+
+ggsave("Output/SNAP/OriginalModel/Rerun/IndPonds_Full_CR45.jpeg", plot = IndPonds_Full_CR45, width = 9, height = 6)
 
 ggplot(data = meltdf, aes(x = date)) +
   stat_smooth(aes(y = value), size = 0.3) +
-  facet_wrap(~variable) +
+  facet_wrap(~Pond) +
   theme_bw()
 
 ggplot(data = meltdf, aes(x = date)) +
   geom_line(aes(y = value), size = 0.3)+
   theme_bw()
 
-IndPonds_CRD45 <- ggplot(data = meltdf, aes(x = date)) +
+IndPonds_CR45 <- ggplot(data = meltdf, aes(x = date)) +
   stat_smooth(aes(y = value, color = Pond, fill = Pond), alpha = 0.15, size = 1) +
-  xlab("Date") +
-  ylab("Temperature (C)")+
+  scale_color_manual(values = c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00","#FFFF33", "#A65628", "#F781BF", "lightblue")) +
+  scale_fill_manual(values = c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00","#FFFF33", "#A65628", "#F781BF", "lightblue")) +
+  ggtitle("Mean Annual Temperature") +
+  xlab("Year") +
+  ylab("Temperature (C)") +
   theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5))
-IndPonds_CRD45
+  theme(plot.title = element_text(hjust = 0.5, size = 18),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
 
-ggsave("Output/SNAP/OriginalModel/Rerun/IndPonds_CRD45.jpeg", plot = IndPonds_CRD45, width = 9, height = 6)
+IndPonds_CR45
+
+ggsave("Output/SNAP/OriginalModel/Rerun/IndPonds_CR45.jpeg", plot = IndPonds_CR45, width = 9, height = 6)
 
 ```
+
+
+
+
+
