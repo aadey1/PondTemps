@@ -1,0 +1,525 @@
+---
+title: "Pooled Forecast Models"
+output: html_notebook
+---
+
+Setting up the R workspace
+
+```{r}
+library(tidyverse)
+library(rjags)
+library(ggplot2)
+
+set.seed(1)
+```
+
+## Starting with the Copper River Delta (CRD)
+
+# RCP 4.5
+
+Read in the data here, which is an output of XX code file
+
+Then separate the data into air and water temperature files
+
+```{r}
+# Air and water temperature data: CR loccation, 4.5 scenario
+CR_Temps <- read.csv("CR_45SNAPForecast.csv", header=TRUE)
+
+# Air temperature variables
+CR_AirTemp45 <- CR_Temps %>%
+  select(date, Airport, Air_MonthAvg, std, precision, Region)
+
+# Water temperature variables
+CR_WaterTemp45 <- CR_Temps %>%
+  select(date, BVS, CAB, TIN, SQR, CAN, EYS, TIS, WDD, RHM)
+
+
+# Set up a string of all the dates
+time <- CR_WaterTemp45$date
+length(time)
+```
+
+Setting up the random walk model
+
+```{r}
+dlm_pooled <- "
+model{
+#### Priors
+for(p in 1:np){
+x[1,p] ~ dnorm(x_ic, tau_ic) # Initial condition of water temperature
+}
+tau_obs ~ dgamma(a_obs, r_obs) # Prior on observation error
+tau_add ~ dgamma(a_add, r_add) # Prior on process error
+
+#### Fixed Effects
+beta ~ dmnorm(mu_beta, tau_beta) # Prior on beta coefficients
+
+for(p in 1:np){
+int[p] ~ dnorm(mu_int, tau_int) # Prior on pond-specific intercepts
+}
+
+#### Data Model
+for(t in 1:n){ # loop over all time steps
+for(p in 1:np){
+OBS[t,p] ~ dnorm(x[t,p], tau_obs) # Observed water temperature is drawn from latent air temperature with observation uncertainty
+}
+Xf[t] ~ dnorm(muAirTemp[t], tauAirTemp[t]) # Latent air temperature is drawn from mean and precision of forecasated air temperature
+}
+
+#### Process Model
+for(t in 2:n){ # loop over all time steps except teh first (we defined ic above)
+for(p in 1:np){
+mu[t,p] <- x[t-1,p] + int[p] + beta[1] * x[t-1,p] + beta[2] * Xf[t] # Mean water temperature is a function of the previous time step and current air temperature
+x[t,p] ~ dnorm(mu[t,p], tau_add) # Latent water temperature is drawn from mean water temperature with process uncertainty
+}
+}
+}
+"
+```
+
+Define the data and priors for the model
+
+```{r}
+# Empty list
+data <- list()
+# Water temperature observations
+data$OBS <- dplyr::select(CR_WaterTemp45, -date)
+# Number of time steps
+data$n <- nrow(data$OBS)
+# Number of ponds
+data$np <- ncol(data$OBS)
+# Initial water temperature mean
+data$x_ic <- 0.1
+# Initial water temperature precision
+data$tau_ic = 0.1
+# Prior parameters for observation and process uncertainty
+data$a_obs = 1
+data$r_obs = 1
+data$a_add = 1
+data$r_add = 1
+# Prior parameters for beta coefficients
+data$mu_beta <- c(0, 0)
+data$tau_beta <- diag(x = c(0.001, 0.001), nrow = 2, ncol = 2)
+# Prior parameters for intercept
+data$mu_int <- 0
+data$tau_int <- 0.001
+# Mean air temperature estimate
+data$muAirTemp <- CR_AirTemp45$Air_MonthAvg
+# Air temperature precision
+data$tauAirTemp <- CR_AirTemp45$precision
+
+```
+
+Create JAGS model with 3 chains
+
+```{r}
+jm <- jags.model(file = textConnection(dlm_pooled), data = data, n.chains = 3)
+```
+
+Posterior samples of parameters
+
+```{r}
+CRD45_out_params <- coda.samples(model = jm,
+                               variable.names = c('beta', 'int',
+                                                  'tau_add', 'tau_obs'),
+                               n.iter = 50000, thin = 5)
+```
+
+Posterior samples of response variables
+
+```{r}
+CRD45_out_response <- coda.samples(model = jm,
+                                 variable.names = c('x', 'OBS'),
+                                 n.iter = 100000, thin = 20)
+```
+
+A couple quick checks here
+
+```{r}
+# plot(CRD45_out_params)
+gelman.diag(CRD45_out_params, confidence = 0.99)
+
+```
+
+Visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's
+
+Transform the samples back from the log domain to the linear domain
+
+```{r}
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(CRD45_out_response)         ## convert from coda to matrix
+```
+
+code from AMW for splitting up this matrix
+```{r}
+x_cols <- grep('^x', colnames(out))
+obs_cols <- grep('^OBS', colnames(out))
+
+out_x <- out[,x_cols]
+out_obs <- out[,obs_cols]
+
+rm(out)
+
+out_x <- t(out_x)
+
+out_x <- as.data.frame(out_x)
+out_x2 <- out_x |>
+  tibble::rownames_to_column(var = 'time_pond') |>
+  dplyr::mutate(timestep = sub(x = time_pond,
+                               pattern = '.*x\\[',
+                               replacement = ''),
+                timestep = sub(x = timestep,
+                               pattern = ',.*',
+                               replacement = ''),
+                pond = sub(x = time_pond,
+                           pattern = '.*,',
+                           replacement = ''),
+                pond = sub(x = pond,
+                           pattern = '\\]',
+                           replacement = '')) |>
+  tidyr::pivot_longer(-c(time_pond, timestep, pond),
+                      names_to = 'iter', values_to = 'val') |>
+  dplyr::group_by(pond, timestep) |>
+  dplyr::summarize(low = quantile(val, probs = 0.025),
+                   med = median(val),
+                   high = quantile(val, probs = 0.975))
+
+timesteps <- as.data.frame(time)
+timesteps$ind <- as.character(seq(from = 1, to = nrow(timesteps), by = 1))
+colnames(timesteps) <- c('time', 'timestep')
+
+ponds <- as.data.frame(colnames(CR_WaterTemp[-1]))
+ponds$ind <- as.character(seq(from = 1, to = nrow(ponds), by = 1))
+colnames(ponds) <- c('pond_name', 'pond')
+
+out_x_mapped <- out_x2 |>
+  dplyr::left_join(y = timesteps, by = 'timestep') |>
+  dplyr::left_join(y = ponds, by = 'pond') |>
+  dplyr::select(low, med, high, time, pond_name)
+
+pX <- out_x_mapped |>
+  ggplot2::ggplot() +
+  ggplot2::geom_line(ggplot2::aes(x = time, y = med)) +
+  ggplot2::geom_ribbon(ggplot2::aes(x = time, ymin = low, ymax = high)) +
+  ggplot2::facet_wrap(~pond_name)
+
+out_obs <- t(out_obs)
+
+out_obs <- as.data.frame(out_obs)
+
+out_obs2 <- out_obs |>
+  tibble::rownames_to_column(var = 'time_pond') |>
+  dplyr::mutate(timestep = sub(x = time_pond,
+                               pattern = '.*OBS\\[',
+                               replacement = ''),
+                timestep = sub(x = timestep,
+                               pattern = ',.*',
+                               replacement = ''),
+                pond = sub(x = time_pond,
+                           pattern = '.*,',
+                           replacement = ''),
+                pond = sub(x = pond,
+                           pattern = '\\]',
+                           replacement = '')) |>
+  tidyr::pivot_longer(-c(time_pond, timestep, pond),
+                      names_to = 'iter', values_to = 'val') |>
+  dplyr::group_by(pond, timestep) |>
+  dplyr::summarize(low = quantile(val, probs = 0.025),
+                   med = median(val),
+                   high = quantile(val, probs = 0.975))
+
+out_obs_mapped <- out_obs2 |>
+  dplyr::left_join(y = timesteps, by = 'timestep') |>
+  dplyr::left_join(y = ponds, by = 'pond') |>
+  dplyr::select(low, med, high, time, pond_name)
+
+pOBS <- out_obs_mapped |>
+  ggplot2::ggplot() +
+  ggplot2::geom_line(ggplot2::aes(x = time, y = med)) +
+  ggplot2::geom_ribbon(ggplot2::aes(x = time, ymin = low, ymax = high)) +
+  ggplot2::facet_wrap(~pond_name)
+
+cowplot::plot_grid(pX, pOBS)
+```
+
+Old code of mine from the individual plots
+```{r}
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  
+  # Remove the "X" prefix from the date column
+  ci_transposed$date <- gsub("^X", "", ci_transposed$date)
+
+  # Convert the cleaned date column to Date object
+  ci_transposed$date <- as.Date(ci_transposed$date, format = "%Y.%m.%d")
+
+  # Check the updated structure
+  str(ci_transposed)
+  head(ci_transposed)
+  
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  CRD45_OutputCheck <- merge(ModelOutput, CR_WaterTemp45, by = "date", all = T)
+  
+
+```
+  
+Plot the dataframe in ggplot2
+
+```{r}
+CRD45_ModelPlot <- ggplot(CRD45_OutputCheck) +
+  geom_line(aes(x = date, y = `50%`, color = "#E41A1C")) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_vline(xintercept = as.Date("2021-01-01"), linetype = "dashed", linewidth = 1) +
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        legend.position = "none")
+CRD45_ModelPlot
+
+CRD45_ModelErrorPlot <- ggplot(CRD45_OutputCheck, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightblue") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+CRD45_ModelErrorPlot
+
+ggsave("Output/GeoSNAP/CRD45_ModelPlot.jpeg", plot = CRD45_ModelPlot, width = 8, height = 6)
+ggsave("Output/GeoSNAP/CRD45_ModelErrorPlot.jpeg", plot = CRD45_ModelErrorPlot, width = 8, height = 6)
+```
+
+
+# RCP 8.5
+
+Read in the data here, which is an output of XX code file
+
+Then separate the data into air and water temperature files
+
+```{r}
+# Air and water temperature data: CR loccation, 8.5 scenario
+CR_Temps <- read.csv("CR_85SNAPForecast.csv", header=TRUE)
+
+# Air temperature variables
+CR_AirTemp85 <- CR_Temps %>%
+  select(date, Airport, Air_MonthAvg, std, precision, Region)
+
+# Water temperature variables
+CR_WaterTemp85 <- CR_Temps %>%
+  select(date, BVS, CAB, TIN, SQR, CAN, EYS, TIS, WDD, RHM)
+
+
+# Set up a string of all the dates
+time <- CR_WaterTemp85$date
+length(time)
+```
+
+Setting up the random walk model
+
+```{r}
+dlm_pooled <- "
+model{
+#### Priors
+for(p in 1:np){
+x[1,p] ~ dnorm(x_ic, tau_ic) # Initial condition of water temperature
+}
+tau_obs ~ dgamma(a_obs, r_obs) # Prior on observation error
+tau_add ~ dgamma(a_add, r_add) # Prior on process error
+
+#### Fixed Effects
+beta ~ dmnorm(mu_beta, tau_beta) # Prior on beta coefficients
+
+for(p in 1:np){
+int[p] ~ dnorm(mu_int, tau_int) # Prior on pond-specific intercepts
+}
+
+#### Data Model
+for(t in 1:n){ # loop over all time steps
+for(p in 1:np){
+OBS[t,p] ~ dnorm(x[t,p], tau_obs) # Observed water temperature is drawn from latent air temperature with observation uncertainty
+}
+Xf[t] ~ dnorm(muAirTemp[t], tauAirTemp[t]) # Latent air temperature is drawn from mean and precision of forecasated air temperature
+}
+
+#### Process Model
+for(t in 2:n){ # loop over all time steps except teh first (we defined ic above)
+for(p in 1:np){
+mu[t,p] <- x[t-1,p] + int[p] + beta[1] * x[t-1,p] + beta[2] * Xf[t] # Mean water temperature is a function of the previous time step and current air temperature
+x[t,p] ~ dnorm(mu[t,p], tau_add) # Latent water temperature is drawn from mean water temperature with process uncertainty
+}
+}
+}
+"
+```
+
+Define the data and priors for the model
+
+```{r}
+# Empty list
+data <- list()
+# Water temperature observations
+data$OBS <- dplyr::select(CR_WaterTemp85, -date)
+# Number of time steps
+data$n <- nrow(data$OBS)
+# Number of ponds
+data$np <- ncol(data$OBS)
+# Initial water temperature mean
+data$x_ic <- 0.1
+# Initial water temperature precision
+data$tau_ic = 0.1
+# Prior parameters for observation and process uncertainty
+data$a_obs = 1
+data$r_obs = 1
+data$a_add = 1
+data$r_add = 1
+# Prior parameters for beta coefficients
+data$mu_beta <- c(0, 0)
+data$tau_beta <- diag(x = c(0.001, 0.001), nrow = 2, ncol = 2)
+# Prior parameters for intercept
+data$mu_int <- 0
+data$tau_int <- 0.001
+# Mean air temperature estimate
+data$muAirTemp <- CR_AirTemp85$Air_MonthAvg
+# Air temperature precision
+data$tauAirTemp <- CR_AirTemp85$precision
+
+```
+
+Create JAGS model with 3 chains
+
+```{r}
+jm <- jags.model(file = textConnection(dlm_pooled), data = data, n.chains = 3)
+```
+
+Posterior samples of parameters
+
+```{r}
+CRD85_out_params <- coda.samples(model = jm,
+                               variable.names = c('beta', 'int',
+                                                  'tau_add', 'tau_obs'),
+                               n.iter = 50000, thin = 5)
+```
+
+Posterior samples of response variables
+
+```{r}
+CRD85_out_response <- coda.samples(model = jm,
+                                 variable.names = c('x', 'OBS'),
+                                 n.iter = 50000, thin = 5)
+```
+
+A couple quick checks here
+
+```{r}
+plot(CRD85_out_params) # I sometimes get an error here about the dimensions/number of outputs
+gelman.diag(CRD85_out_params, confidence = 0.99)
+
+```
+
+Visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's
+
+Transform the samples back from the log domain to the linear domain
+
+```{r}
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(CRD85_out_response)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  
+  # Remove the "X" prefix from the date column
+  ci_transposed$date <- gsub("^X", "", ci_transposed$date)
+
+  # Convert the cleaned date column to Date object
+  ci_transposed$date <- as.Date(ci_transposed$date, format = "%Y.%m.%d")
+
+  # Check the updated structure
+  str(ci_transposed)
+  head(ci_transposed)
+  
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  CRD45_OutputCheck <- merge(ModelOutput, CR_WaterTemp45, by = "date", all = T)
+```
+  
+Plot the dataframe in ggplot2
+
+```{r}
+CRD85_ModelPlot <- ggplot(CRD85_OutputCheck) +
+  geom_line(aes(x = date, y = `50%`, color = "#E41A1C")) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_vline(xintercept = as.Date("2021-01-01"), linetype = "dashed", linewidth = 1) +
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        legend.position = "none")
+CRD45_ModelPlot
+
+CRD45_ModelErrorPlot <- ggplot(CRD45_OutputCheck, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightred") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_vline(xintercept = as.Date("2021-01-01"), color = "red", linetype = "dashed", size = 1) +
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+CRD45_ModelErrorPlot
+
+ggsave("Output/GeoSNAP/CRD45_ModelPlot.jpeg", plot = CRD45_ModelPlot, width = 8, height = 6)
+ggsave("Output/GeoSNAP/CRD45_ModelErrorPlot.jpeg", plot = CRD45_ModelErrorPlot, width = 8, height = 6)
+```
