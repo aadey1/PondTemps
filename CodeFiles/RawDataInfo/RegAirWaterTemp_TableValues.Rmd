@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Load in the CR dataset 
 ```{r}
-CR_Temps <- read.csv("DataFiles/CR_45Forecast.csv", header=TRUE)
+CR_Temps <- read.csv("CR_45SNAPForecast.csv", header=TRUE)
 
 library(dplyr)
 # remove the first column here and change the column for Date to date
@@ -91,7 +91,7 @@ summary(lm9)
 
 # Load in the YF dataset 
 ```{r}
-YF_Temps <- read.csv("DataFiles/YF_45Forecast.csv", header=TRUE)
+YF_Temps <- read.csv("YF_45SNAPForecast.csv", header=TRUE)
 
 library(dplyr)
 # remove the first column here and change the column for Date to date

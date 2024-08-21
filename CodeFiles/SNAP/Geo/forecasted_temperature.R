@@ -1008,3 +1008,36 @@ ggsave("FutureRCP_5Ensemble.png", plot = plotFutureEnsemble, width = 8, height =
 
 # Save
 save(aat, file = 'DataFiles/GeoData/forecasted_temperature.RData')
+
+
+#trying to make this match the forecasted h20 temp plot
+library(dplyr)
+library(ggplot2)
+
+# Define color palette for RCP scenarios
+color_palette <- c("45" = "#6baed6",  # Soft Blue
+                   "85" = "#d73027")  # Dark Red
+
+# Create a mapping for legend labels
+legend_labels <- c("45" = "RCP 4.5", "85" = "RCP 8.5")
+
+# Plot
+plotFutureEnsemble <- aat %>%
+  dplyr::filter(rcp != "60") %>%
+  dplyr::group_by(rcp, model, year, site) %>%
+  dplyr::summarize(aat = mean(temperature), .groups = 'drop') %>%
+  dplyr::group_by(rcp, year, site) %>%
+  dplyr::summarize(mean = mean(aat), sd = sd(aat), .groups = 'drop') %>%
+  ggplot2::ggplot(aes(x = as.numeric(year), y = mean, color = rcp, fill = rcp)) +
+  ggplot2::geom_line(size = 1) +
+  ggplot2::geom_ribbon(aes(ymin = mean - sd, ymax = mean + sd), alpha = 0.5) +
+  ggplot2::scale_color_manual(values = color_palette, labels = legend_labels) +
+  ggplot2::scale_fill_manual(values = color_palette, labels = legend_labels) +
+  ggplot2::facet_wrap(~site, labeller = ggplot2::labeller(site = c("yak" = "YF", "cord" = "CRD"))) +
+  ggplot2::labs(x = "Year", y = "Mean Temp (C)") +
+  ggplot2::theme_bw() +
+  ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1),
+                 legend.title = ggplot2::element_blank())
+
+# Print the plot
+print(plotFutureEnsemble)

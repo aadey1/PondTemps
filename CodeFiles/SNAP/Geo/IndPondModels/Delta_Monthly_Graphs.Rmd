@@ -7,6 +7,11 @@ This file is to take the code from DeltaCals_Seasonality_CRD/YF85, DeltaCalcs_Se
 
 ### Starting with the CRD
 
+```{r}
+
+rm(list = ls())
+```
+
 This code is *directly from the code files listed above*
 - .csv files were made at the end of the "DeltaCalcs_Seasonality" files
 - those are loaded and used here
@@ -48,7 +53,7 @@ MonthlyStatsCRD85_2030Plot <- ggplot(data = MonthlyStatsCRD85_2030, aes(x = Mont
   ylim(-3,6)+
   theme_classic() +
   labs(x = "", y = "Delta Temp (C)") +
-  theme(axis.text.x = element_text(angle = 65, hjust = 1)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   theme(axis.title = element_text(size = 16),
         axis.text = element_text(size = 14))
 MonthlyStatsCRD85_2030Plot
@@ -73,7 +78,7 @@ MonthlyStatsCRD85_2060Plot <- ggplot(data = MonthlyStatsCRD85_2060, aes(x = Mont
   ylim(-3,6)+
   theme_classic() +
   labs(x = "", y = "") +
-  theme(axis.text.x = element_text(angle = 65, hjust = 1)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   theme(axis.title = element_text(size = 16),
         axis.text = element_text(size = 14))+
   theme(axis.text.y = element_blank(),  # Remove Y-axis tick mark labels
@@ -99,7 +104,7 @@ MonthlyStatsCRD85_2090Plot <- ggplot(data = MonthlyStatsCRD85_2090, aes(x = Mont
   scale_x_continuous(breaks = 1:12, labels = month.abb) +  # Adjust x-axis labels to show month abbreviations
   ylim(-3,6)+
   theme_classic() +
-  theme(axis.text.x = element_text(angle = 65, hjust = 1)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(x = "", y = "") +
   theme(axis.title = element_text(size = 16),
         axis.text = element_text(size = 14))+
@@ -134,7 +139,7 @@ MonthlyStatsCRD45_2030Plot <- ggplot(data = MonthlyStatsCRD45_2030, aes(x = Mont
   ylim(-3,6)+
   theme_classic() +
   labs(x = "", y = "Delta Temp (C)") +
-  theme(axis.text.x = element_text(angle = 65, hjust = 1)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   theme(axis.title = element_text(size = 16),
         axis.text = element_text(size = 14))
 MonthlyStatsCRD45_2030Plot
@@ -159,7 +164,7 @@ MonthlyStatsCRD45_2060Plot <- ggplot(data = MonthlyStatsCRD45_2060, aes(x = Mont
   ylim(-3,6)+
   theme_classic() +
   labs(x = "", y = "") +
-  theme(axis.text.x = element_text(angle = 65, hjust = 1)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   theme(axis.title = element_text(size = 16),
         axis.text = element_text(size = 14))+
   theme(axis.text.y = element_blank(),  # Remove Y-axis tick mark labels
@@ -185,7 +190,7 @@ MonthlyStatsCRD45_2090Plot <- ggplot(data = MonthlyStatsCRD45_2090, aes(x = Mont
   scale_x_continuous(breaks = 1:12, labels = month.abb) +  # Adjust x-axis labels to show month abbreviations
   ylim(-3,6)+
   theme_classic() +
-  theme(axis.text.x = element_text(angle = 65, hjust = 1)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(x = "", y = "") +
   theme(axis.title = element_text(size = 16),
         axis.text = element_text(size = 14))+
@@ -213,7 +218,7 @@ MonthlyStatsCRD_2030Plot <- ggplot() +
   ylim(-3, 6) +
   theme_classic() +
   labs(x = "", y = "Delta Temp (C)", color = "RCP") +  # Setting legend title
-  theme(axis.text.x = element_text(angle = 65, hjust = 1),
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
         axis.title = element_text(size = 16),
         axis.text = element_text(size = 14)) +
   scale_color_manual(values = c("4.5" = "blue", "8.5" = "red"), labels = c("4.5", "8.5")) +  # Adjusting color scale
@@ -234,7 +239,7 @@ MonthlyStatsCRD_2060Plot <- ggplot() +
   ylim(-3, 6) +
   theme_classic() +
   labs(x = "", y = "", color = "RCP") + # Setting legend title
-  theme(axis.text.x = element_text(angle = 65, hjust = 1),
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
         axis.title = element_text(size = 16),
         axis.text = element_text(size = 14))+
   theme(axis.text.y = element_blank(),  # Remove Y-axis tick mark labels
@@ -259,7 +264,7 @@ MonthlyStatsCRD_2090Plot <- ggplot() +
   labs(x = "", y = "", color = "RCP") + #setting the legend title
   theme(axis.title = element_text(size = 16),
         axis.text = element_text(size = 14))+
-  theme(axis.text.x = element_text(angle = 65, hjust = 1),
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
         axis.text.y = element_blank(),  # Remove Y-axis tick mark labels
         axis.ticks.y = element_blank())+
   scale_color_manual(values = c("4.5" = "blue", "8.5" = "red"), labels = c("4.5", "8.5")) + # Adjusting color scale  
@@ -272,7 +277,7 @@ Panel Plot
 ```{r}
 MonthlyStatsCRD <- ggarrange(MonthlyStatsCRD_2030Plot, MonthlyStatsCRD_2060Plot, MonthlyStatsCRD_2090Plot, ncol = 3)
 MonthlyStatsCRD
-ggsave("Output/GeoSNAP/DeltaMonthCRD.png", plot = MonthlyStatsCRD, width = 12, height = 3)
+ggsave("DeltaMonthCRD.png", plot = MonthlyStatsCRD, width = 12, height = 3)
 ```
 
 ### Moving on to YF
@@ -318,7 +323,7 @@ MonthlyStatsYF85_2030Plot <- ggplot(data = MonthlyStatsYF85_2030, aes(x = Month)
   ylim(-3,6)+
   theme_classic() +
   labs(x = "", y = "Delta Temp (C)") +
-  theme(axis.text.x = element_text(angle = 65, hjust = 1)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   theme(axis.title = element_text(size = 16),
         axis.text = element_text(size = 14))
 MonthlyStatsYF85_2030Plot
@@ -343,7 +348,7 @@ MonthlyStatsYF85_2060Plot <- ggplot(data = MonthlyStatsYF85_2060, aes(x = Month)
   ylim(-3,6)+
   theme_classic() +
   labs(x = "", y = "") +
-  theme(axis.text.x = element_text(angle = 65, hjust = 1)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   theme(axis.title = element_text(size = 16),
         axis.text = element_text(size = 14))+
   theme(axis.text.y = element_blank(),  # Remove Y-axis tick mark labels
@@ -369,7 +374,7 @@ MonthlyStatsYF85_2090Plot <- ggplot(data = MonthlyStatsYF85_2090, aes(x = Month)
   scale_x_continuous(breaks = 1:12, labels = month.abb) +  # Adjust x-axis labels to show month abbreviations
   ylim(-3,6)+
   theme_classic() +
-  theme(axis.text.x = element_text(angle = 65, hjust = 1)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(x = "", y = "") +
   theme(axis.title = element_text(size = 16),
         axis.text = element_text(size = 14))+
@@ -404,7 +409,7 @@ MonthlyStatsYF45_2030Plot <- ggplot(data = MonthlyStatsYF45_2030, aes(x = Month)
   ylim(-3,6)+
   theme_classic() +
   labs(x = "", y = "Delta Temp (C)") +
-  theme(axis.text.x = element_text(angle = 65, hjust = 1)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   theme(axis.title = element_text(size = 16),
         axis.text = element_text(size = 14))
 MonthlyStatsYF45_2030Plot
@@ -429,7 +434,7 @@ MonthlyStatsYF45_2060Plot <- ggplot(data = MonthlyStatsYF45_2060, aes(x = Month)
   ylim(-3,6)+
   theme_classic() +
   labs(x = "", y = "") +
-  theme(axis.text.x = element_text(angle = 65, hjust = 1)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   theme(axis.title = element_text(size = 16),
         axis.text = element_text(size = 14))+
   theme(axis.text.y = element_blank(),  # Remove Y-axis tick mark labels
@@ -455,7 +460,7 @@ MonthlyStatsYF45_2090Plot <- ggplot(data = MonthlyStatsYF45_2090, aes(x = Month)
   scale_x_continuous(breaks = 1:12, labels = month.abb) +  # Adjust x-axis labels to show month abbreviations
   ylim(-3,6)+
   theme_classic() +
-  theme(axis.text.x = element_text(angle = 65, hjust = 1)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(x = "", y = "") +
   theme(axis.title = element_text(size = 16),
         axis.text = element_text(size = 14))+
@@ -483,7 +488,7 @@ MonthlyStatsYF_2030Plot <- ggplot() +
   ylim(-3, 6) +
   theme_classic() +
   labs(x = "", y = "Delta Temp (C)", color = "RCP") +  # Setting legend title
-  theme(axis.text.x = element_text(angle = 65, hjust = 1),
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
         axis.title = element_text(size = 16),
         axis.text = element_text(size = 14)) +
   scale_color_manual(values = c("4.5" = "blue", "8.5" = "red"), labels = c("4.5", "8.5")) +  # Adjusting color scale
@@ -504,7 +509,7 @@ MonthlyStatsYF_2060Plot <- ggplot() +
   ylim(-3, 6) +
   theme_classic() +
   labs(x = "", y = "", color = "RCP") + # Setting legend title
-  theme(axis.text.x = element_text(angle = 65, hjust = 1),
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
         axis.title = element_text(size = 16),
         axis.text = element_text(size = 14))+
   theme(axis.text.y = element_blank(),  # Remove Y-axis tick mark labels
@@ -529,7 +534,7 @@ MonthlyStatsYF_2090Plot <- ggplot() +
   labs(x = "", y = "", color = "RCP") + #setting the legend title
   theme(axis.title = element_text(size = 16),
         axis.text = element_text(size = 14))+
-  theme(axis.text.x = element_text(angle = 65, hjust = 1),
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
         axis.text.y = element_blank(),  # Remove Y-axis tick mark labels
         axis.ticks.y = element_blank())+
   scale_color_manual(values = c("4.5" = "blue", "8.5" = "red"), labels = c("4.5", "8.5")) + # Adjusting color scale  
@@ -542,6 +547,6 @@ Panel Plot
 ```{r}
 MonthlyStatsYF <- ggarrange(MonthlyStatsYF_2030Plot, MonthlyStatsYF_2060Plot, MonthlyStatsYF_2090Plot, ncol = 3)
 MonthlyStatsYF
-ggsave("Output/GeoSNAP/DeltaMonthYF.png", plot = MonthlyStatsYF, width = 12, height = 3)
+ggsave("DeltaMonthYF.png", plot = MonthlyStatsYF, width = 12, height = 3)
 ```
 
