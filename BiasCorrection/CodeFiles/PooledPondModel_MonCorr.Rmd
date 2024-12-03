@@ -1,0 +1,1764 @@
+---
+title: "Pooled Forecast Models"
+output: html_notebook
+---
+
+Setting up the R workspace
+
+```{r}
+library(tidyverse)
+library(rjags)
+library(ggplot2)
+library(hydroGOF)
+
+set.seed(1)
+```
+
+# Starting with the Copper River Delta (CRD)
+
+## RCP 4.5
+
+### Design the Model
+
+Read in the data here, which is an output of XX code file
+
+Then separate the data into air and water temperature files
+
+```{r}
+# Air and water temperature data: CR location, 4.5 scenario
+CR_Temps <- read.csv("CR_45SNAPForecast_MonCorr.csv", header=TRUE)
+
+# Air temperature variables
+CR_AirTemp45 <- CR_Temps %>%
+  select(date, Airport, Air_MonthAvg, std, precision, Region)
+
+# Water temperature variables
+CR_WaterTemp45 <- CR_Temps %>%
+  select(date, BVS, CAB, TIN, SQR, CAN, EYS, TIS, WDD, RHM)
+
+
+# Set up a string of all the dates
+time <- CR_WaterTemp45$date
+length(time)
+```
+
+Setting up the random walk model
+
+```{r}
+dlm_pooled <- "
+model{
+#### Priors
+for(p in 1:np){
+x[1,p] ~ dnorm(x_ic, tau_ic) # Initial condition of water temperature
+}
+tau_obs ~ dgamma(a_obs, r_obs) # Prior on observation error
+tau_add ~ dgamma(a_add, r_add) # Prior on process error
+
+#### Fixed Effects
+beta ~ dmnorm(mu_beta, tau_beta) # Prior on beta coefficients
+
+for(p in 1:np){
+int[p] ~ dnorm(mu_int, tau_int) # Prior on pond-specific intercepts
+}
+
+#### Data Model
+for(t in 1:n){ # loop over all time steps
+for(p in 1:np){
+OBS[t,p] ~ dnorm(x[t,p], tau_obs) # Observed water temperature is drawn from latent air temperature with observation uncertainty
+}
+Xf[t] ~ dnorm(muAirTemp[t], tauAirTemp[t]) # Latent air temperature is drawn from mean and precision of forecasated air temperature
+}
+
+#### Process Model
+for(t in 2:n){ # loop over all time steps except teh first (we defined ic above)
+for(p in 1:np){
+mu[t,p] <- x[t-1,p] + int[p] + beta[1] * x[t-1,p] + beta[2] * Xf[t] # Mean water temperature is a function of the previous time step and current air temperature
+x[t,p] ~ dnorm(mu[t,p], tau_add) # Latent water temperature is drawn from mean water temperature with process uncertainty
+}
+}
+}
+"
+```
+
+Define the data and priors for the model
+
+```{r}
+# Empty list
+data <- list()
+# Water temperature observations
+data$OBS <- dplyr::select(CR_WaterTemp45, -date)
+# Number of time steps
+data$n <- nrow(data$OBS)
+# Number of ponds
+data$np <- ncol(data$OBS)
+# Initial water temperature mean
+data$x_ic <- 0.1
+# Initial water temperature precision
+data$tau_ic = 0.1
+# Prior parameters for observation and process uncertainty
+data$a_obs = 1
+data$r_obs = 1
+data$a_add = 1
+data$r_add = 1
+# Prior parameters for beta coefficients
+data$mu_beta <- c(0, 0)
+data$tau_beta <- diag(x = c(0.001, 0.001), nrow = 2, ncol = 2)
+# Prior parameters for intercept
+data$mu_int <- 0
+data$tau_int <- 0.001
+# Mean air temperature estimate
+data$muAirTemp <- CR_AirTemp45$Air_MonthAvg
+# Air temperature precision
+data$tauAirTemp <- CR_AirTemp45$precision
+
+```
+
+Create JAGS model with 3 chains
+
+```{r}
+jm <- jags.model(file = textConnection(dlm_pooled), data = data, n.chains = 3)
+```
+
+Posterior samples of parameters
+
+```{r}
+CRD45_out_params <- coda.samples(model = jm,
+                               variable.names = c('beta', 'int',
+                                                  'tau_add', 'tau_obs'),
+                               n.iter = 50000, thin = 25)
+```
+
+Posterior samples of response variables
+
+```{r}
+CRD45_out_response <- coda.samples(model = jm,
+                                 variable.names = c('x', 'OBS'),
+                                 n.iter = 100000, thin = 25)
+```
+
+A couple quick checks here
+
+```{r}
+# plot(CRD45_out_params)
+gelman.diag(CRD45_out_params, confidence = 0.99)
+
+```
+
+Visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's
+
+Transform the samples back from the log domain to the linear domain
+
+```{r}
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(CRD45_out_response)         ## convert from coda to matrix
+```
+
+code from AMW for splitting up this matrix
+```{r}
+x_cols <- grep('^x', colnames(out))
+obs_cols <- grep('^OBS', colnames(out))
+
+out_x <- out[,x_cols]
+out_obs <- out[,obs_cols]
+
+rm(out)
+
+out_x <- t(out_x)
+
+out_x <- as.data.frame(out_x)
+out_x2 <- out_x |>
+  tibble::rownames_to_column(var = 'time_pond') |>
+  dplyr::mutate(timestep = sub(x = time_pond,
+                               pattern = '.*x\\[',
+                               replacement = ''),
+                timestep = sub(x = timestep,
+                               pattern = ',.*',
+                               replacement = ''),
+                pond = sub(x = time_pond,
+                           pattern = '.*,',
+                           replacement = ''),
+                pond = sub(x = pond,
+                           pattern = '\\]',
+                           replacement = '')) |>
+  tidyr::pivot_longer(-c(time_pond, timestep, pond),
+                      names_to = 'iter', values_to = 'val') |>
+  dplyr::group_by(pond, timestep) |>
+  dplyr::summarize(low = quantile(val, probs = 0.025),
+                   med = median(val),
+                   high = quantile(val, probs = 0.975))
+
+timesteps <- as.data.frame(time)
+timesteps$ind <- as.character(seq(from = 1, to = nrow(timesteps), by = 1))
+colnames(timesteps) <- c('time', 'timestep')
+
+ponds <- as.data.frame(colnames(CR_WaterTemp45[-1]))
+ponds$ind <- as.character(seq(from = 1, to = nrow(ponds), by = 1))
+colnames(ponds) <- c('pond_name', 'pond')
+
+out_x_mapped <- out_x2 |>
+  dplyr::left_join(y = timesteps, by = 'timestep') |>
+  dplyr::left_join(y = ponds, by = 'pond') |>
+  dplyr::select(low, med, high, time, pond_name)
+
+pX <- out_x_mapped |>
+  ggplot2::ggplot() +
+  ggplot2::geom_line(ggplot2::aes(x = time, y = med)) +
+  ggplot2::geom_ribbon(ggplot2::aes(x = time, ymin = low, ymax = high)) +
+  ggplot2::facet_wrap(~pond_name)
+
+out_obs <- t(out_obs)
+
+out_obs <- as.data.frame(out_obs)
+
+out_obs2 <- out_obs |>
+  tibble::rownames_to_column(var = 'time_pond') |>
+  dplyr::mutate(timestep = sub(x = time_pond,
+                               pattern = '.*OBS\\[',
+                               replacement = ''),
+                timestep = sub(x = timestep,
+                               pattern = ',.*',
+                               replacement = ''),
+                pond = sub(x = time_pond,
+                           pattern = '.*,',
+                           replacement = ''),
+                pond = sub(x = pond,
+                           pattern = '\\]',
+                           replacement = '')) |>
+  tidyr::pivot_longer(-c(time_pond, timestep, pond),
+                      names_to = 'iter', values_to = 'val') |>
+  dplyr::group_by(pond, timestep) |>
+  dplyr::summarize(low = quantile(val, probs = 0.025),
+                   med = median(val),
+                   high = quantile(val, probs = 0.975))
+
+out_obs_mapped <- out_obs2 |>
+  dplyr::left_join(y = timesteps, by = 'timestep') |>
+  dplyr::left_join(y = ponds, by = 'pond') |>
+  dplyr::select(low, med, high, time, pond_name)
+
+pOBS <- out_obs_mapped |>
+  ggplot2::ggplot() +
+  ggplot2::geom_line(ggplot2::aes(x = time, y = med)) +
+  ggplot2::geom_ribbon(ggplot2::aes(x = time, ymin = low, ymax = high)) +
+  ggplot2::facet_wrap(~pond_name)
+
+cowplot::plot_grid(pX, pOBS)
+```
+
+### Probability of Crossing Threshold
+
+```{r}
+threshold_probs <- out_obs |>
+  tibble::rownames_to_column(var = 'time_pond') |>
+  dplyr::mutate(timestep = sub(x = time_pond,
+                               pattern = '.*OBS\\[',
+                               replacement = ''),
+                timestep = sub(x = timestep,
+                               pattern = ',.*',
+                               replacement = ''),
+                pond = sub(x = time_pond,
+                           pattern = '.*,',
+                           replacement = ''),
+                pond = sub(x = pond,
+                           pattern = '\\]',
+                           replacement = '')) |>
+  tidyr::pivot_longer(-c(time_pond, timestep, pond),
+                      names_to = 'iter', values_to = 'val') |>
+  dplyr::group_by(pond, timestep) |>
+  dplyr::summarize(n_iter = dplyr::n(),
+                   n_thresh = sum(val > 20),
+                   prob = (n_thresh / n_iter) * 100)
+
+threshold_probs_mapped <- threshold_probs |>
+  dplyr::left_join(y = timesteps, by = 'timestep') |>
+  dplyr::left_join(y = ponds, by = 'pond')
+
+threshold_probs_mapped |>
+  ggplot2::ggplot() +
+  ggplot2::geom_line(ggplot2::aes(x = time, y = prob)) +
+  ggplot2::facet_wrap(~pond_name)
+```
+
+Save these ouputs using a .RDataFile type
+
+```{r}
+save.image(file = "Corr_PooledMod_CRD45.RData")
+
+#Currently this has all the information in it. Eventually could limit this to be just the relavent information for the remaining code below
+```
+
+### Making Graphs
+
+Load in this file here as long as no code changes are needed above
+
+```{r}
+load(file = "Corr_PooledMod_CRD45.RData")
+```
+
+Creating some nice plots of these
+
+1. colored panel plot (each ponds forecast with the median, high, and low plus a trend line)
+```{r}
+# set up the colors here for the plots below so that each pond has the same color each time
+Mod_CRD45 <- out_obs_mapped
+str(Mod_CRD45)
+write.csv(Mod_CRD45, "Corr_Mod_CRD45.csv")
+
+# Define the custom color palette
+CR_colors <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "lightblue")
+
+# Ensure that CR_colors has the same length as the number of unique ponds
+unique_ponds <- unique(Mod_CRD45$pond_name)
+if (length(CR_colors) != length(unique_ponds)) {
+  stop("The number of colors in CR_colors does not match the number of unique ponds.")
+}
+
+# Create a named vector for CR_colors with pond names
+color_mapping <- setNames(CR_colors, unique_ponds)
+
+# Plotting
+Ponds_CRD45 <- ggplot(data = Mod_CRD45, aes(x = time)) +
+  geom_ribbon(aes(ymin = low, ymax = high, fill = pond_name)) +  # Add the ribbon with colors
+  geom_line(aes(y = med, color = pond_name)) +  # Ensure lines are visible and colored by pond
+  geom_smooth(aes(y = med, color = "grey"), size = 1) +  # Ensure lines are visible and colored by pond
+  geom_vline(xintercept = as.Date("2020-12-01"), linetype = "dashed", color = "red") +  # Add vertical dashed red line
+  facet_wrap(~ pond_name) +  # Facet by pond_name
+  scale_color_manual(values = color_mapping) +  # Use custom colors for lines
+  scale_fill_manual(values = color_mapping) +   # Use custom colors for ribbons
+  xlab("Year") +
+  ylab("Water Temperature (°C)") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5, size = 24),
+        axis.title = element_text(size = 22),
+        axis.text = element_text(size = 20),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none",
+        strip.text = element_text(size = 16))
+Ponds_CRD45
+
+ggsave("Corr_IndPonds_CRD45.png", plot = Ponds_CRD45, width = 8, height = 6)
+
+```
+
+2. Trend by pond (geom smooth for each pond on the same plot for comparison)
+
+```{r}
+# using the same aestetics as above
+
+Trends_CRD45 <- ggplot(data = Mod_CRD45, aes(x = time)) +
+  geom_smooth(aes(y = med, color = pond_name, fill = pond_name), alpha = 0.15, size = 1) +  # Smooth lines with colors by pond_name
+  scale_color_manual(values = color_mapping) +
+  scale_fill_manual(values = color_mapping) +   # Use custom colors for ribbons
+  labs(
+       x = "Year",
+       y = "Water Temperature (°C)",
+       color = "Pond Name",
+       fill = "Pond Name") +  # Labels for legend
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5, size = 18),
+        axis.title = element_text(size = 22),
+        axis.text = element_text(size = 20),
+        legend.position = "right",
+        legend.text = element_text(size = 16), # Change the legend text size here
+        legend.title = element_text(size = 20)) # Position the legend on the right
+Trends_CRD45
+
+ggsave("Corr_IndTrends_CRD45.png", plot = Trends_CRD45, width = 9, height = 6)
+
+```
+
+3. probability plot (by pond)
+
+```{r}
+probs_CRD45 <- threshold_probs_mapped
+write.csv(probs_CRD45, "Corr_probs_CRD45.csv")
+
+Probs20_CRD45 <- ggplot(data = probs_CRD45, aes(x = time)) +
+  geom_line(aes(y = prob, color = pond_name)) +  # Ensure lines are visible and colored by pond
+  facet_wrap(~ pond_name) +  # Facet by pond_name
+  scale_color_manual(values = color_mapping) +  # Use custom colors for lines
+  xlab("Year") +
+  ylab("Probability") +
+  xlim(as.Date(c("2020-12-01", "2099-12-01"))) +
+  ylim(0,100) +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5, size = 18),
+        axis.title = element_text(size = 22),
+        axis.text = element_text(size = 18),
+        axis.text.x = element_text(angle = 55, hjust = 1),
+        legend.position = "none",
+        strip.text = element_text(size = 16))
+Probs20_CRD45
+
+ggsave("Corr_Probs20_CRD45.png", plot = Probs20_CRD45, width = 9, height = 6)
+```
+
+4. Model fits by pond
+
+```{r}
+Mod_CRD45
+
+ModObs <- Mod_CRD45 %>%
+  filter(time < "2021-01-01")
+range(ModObs$time)
+
+ModelErrorPlot_CRD45 <- ggplot(data = ModObs, aes(x = time)) +
+  geom_ribbon(aes(ymin = low, ymax = high, fill = pond_name)) +  # Adjust fill colors
+  geom_line(aes(y = med), color = "black") +  # Black lines for the median values
+  facet_wrap(~ pond_name) +  # Facet by pond_name
+  scale_fill_manual(values = color_mapping) +  # Apply custom color palette for ribbons
+  labs(
+       x = "Year",
+       y = "Water Temperature (°C)",
+       color = "Pond Name",
+       fill = "Pond Name") +  # Labels for legend
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.title = element_text(size = 16),
+    axis.text = element_text(size = 14),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none" # Angle x-axis labels if needed
+  )
+ModelErrorPlot_CRD45
+
+ggsave("Corr_Error_CRD45.png", plot = ModelErrorPlot_CRD45, width = 9, height = 6)
+```
+
+Clear out the environment and reload the basics before starting the next section
+
+```{r}
+rm(list = ls())
+
+library(tidyverse)
+library(rjags)
+library(ggplot2)
+
+set.seed(1)
+```
+
+
+## RCP 8.5
+
+### Design the Model
+
+Read in the data here, which is an output of XX code file
+
+Then separate the data into air and water temperature files
+
+```{r}
+# Air and water temperature data: CR location, 4.5 scenario
+CR_Temps <- read.csv("CR_85SNAPForecast_MonCorr.csv", header=TRUE)
+
+# Air temperature variables
+CR_AirTemp85 <- CR_Temps %>%
+  select(date, Airport, Air_MonthAvg, std, precision, Region)
+
+# Water temperature variables
+CR_WaterTemp85 <- CR_Temps %>%
+  select(date, BVS, CAB, TIN, SQR, CAN, EYS, TIS, WDD, RHM)
+
+
+# Set up a string of all the dates
+time <- CR_WaterTemp85$date
+length(time)
+```
+
+Setting up the random walk model
+
+```{r}
+dlm_pooled <- "
+model{
+#### Priors
+for(p in 1:np){
+x[1,p] ~ dnorm(x_ic, tau_ic) # Initial condition of water temperature
+}
+tau_obs ~ dgamma(a_obs, r_obs) # Prior on observation error
+tau_add ~ dgamma(a_add, r_add) # Prior on process error
+
+#### Fixed Effects
+beta ~ dmnorm(mu_beta, tau_beta) # Prior on beta coefficients
+
+for(p in 1:np){
+int[p] ~ dnorm(mu_int, tau_int) # Prior on pond-specific intercepts
+}
+
+#### Data Model
+for(t in 1:n){ # loop over all time steps
+for(p in 1:np){
+OBS[t,p] ~ dnorm(x[t,p], tau_obs) # Observed water temperature is drawn from latent air temperature with observation uncertainty
+}
+Xf[t] ~ dnorm(muAirTemp[t], tauAirTemp[t]) # Latent air temperature is drawn from mean and precision of forecasated air temperature
+}
+
+#### Process Model
+for(t in 2:n){ # loop over all time steps except teh first (we defined ic above)
+for(p in 1:np){
+mu[t,p] <- x[t-1,p] + int[p] + beta[1] * x[t-1,p] + beta[2] * Xf[t] # Mean water temperature is a function of the previous time step and current air temperature
+x[t,p] ~ dnorm(mu[t,p], tau_add) # Latent water temperature is drawn from mean water temperature with process uncertainty
+}
+}
+}
+"
+```
+
+Define the data and priors for the model
+
+```{r}
+# Empty list
+data <- list()
+# Water temperature observations
+data$OBS <- dplyr::select(CR_WaterTemp85, -date)
+# Number of time steps
+data$n <- nrow(data$OBS)
+# Number of ponds
+data$np <- ncol(data$OBS)
+# Initial water temperature mean
+data$x_ic <- 0.1
+# Initial water temperature precision
+data$tau_ic = 0.1
+# Prior parameters for observation and process uncertainty
+data$a_obs = 1
+data$r_obs = 1
+data$a_add = 1
+data$r_add = 1
+# Prior parameters for beta coefficients
+data$mu_beta <- c(0, 0)
+data$tau_beta <- diag(x = c(0.001, 0.001), nrow = 2, ncol = 2)
+# Prior parameters for intercept
+data$mu_int <- 0
+data$tau_int <- 0.001
+# Mean air temperature estimate
+data$muAirTemp <- CR_AirTemp85$Air_MonthAvg
+# Air temperature precision
+data$tauAirTemp <- CR_AirTemp85$precision
+
+```
+
+Create JAGS model with 3 chains
+
+```{r}
+jm <- jags.model(file = textConnection(dlm_pooled), data = data, n.chains = 3)
+```
+
+Posterior samples of parameters
+
+```{r}
+CRD85_out_params <- coda.samples(model = jm,
+                               variable.names = c('beta', 'int',
+                                                  'tau_add', 'tau_obs'),
+                               n.iter = 50000, thin = 25)
+```
+
+Posterior samples of response variables
+
+```{r}
+CRD85_out_response <- coda.samples(model = jm,
+                                 variable.names = c('x', 'OBS'),
+                                 n.iter = 100000, thin = 25)
+```
+
+A couple quick checks here
+
+```{r}
+# plot(CRD85_out_params)
+gelman.diag(CRD85_out_params, confidence = 0.99)
+
+```
+
+Visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's
+
+Transform the samples back from the log domain to the linear domain
+
+```{r}
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(CRD85_out_response)         ## convert from coda to matrix
+```
+
+code from AMW for splitting up this matrix
+```{r}
+x_cols <- grep('^x', colnames(out))
+obs_cols <- grep('^OBS', colnames(out))
+
+out_x <- out[,x_cols]
+out_obs <- out[,obs_cols]
+
+rm(out)
+
+out_x <- t(out_x)
+
+out_x <- as.data.frame(out_x)
+out_x2 <- out_x |>
+  tibble::rownames_to_column(var = 'time_pond') |>
+  dplyr::mutate(timestep = sub(x = time_pond,
+                               pattern = '.*x\\[',
+                               replacement = ''),
+                timestep = sub(x = timestep,
+                               pattern = ',.*',
+                               replacement = ''),
+                pond = sub(x = time_pond,
+                           pattern = '.*,',
+                           replacement = ''),
+                pond = sub(x = pond,
+                           pattern = '\\]',
+                           replacement = '')) |>
+  tidyr::pivot_longer(-c(time_pond, timestep, pond),
+                      names_to = 'iter', values_to = 'val') |>
+  dplyr::group_by(pond, timestep) |>
+  dplyr::summarize(low = quantile(val, probs = 0.025),
+                   med = median(val),
+                   high = quantile(val, probs = 0.975))
+
+timesteps <- as.data.frame(time)
+timesteps$ind <- as.character(seq(from = 1, to = nrow(timesteps), by = 1))
+colnames(timesteps) <- c('time', 'timestep')
+
+ponds <- as.data.frame(colnames(CR_WaterTemp85[-1]))
+ponds$ind <- as.character(seq(from = 1, to = nrow(ponds), by = 1))
+colnames(ponds) <- c('pond_name', 'pond')
+
+out_x_mapped <- out_x2 |>
+  dplyr::left_join(y = timesteps, by = 'timestep') |>
+  dplyr::left_join(y = ponds, by = 'pond') |>
+  dplyr::select(low, med, high, time, pond_name)
+
+pX <- out_x_mapped |>
+  ggplot2::ggplot() +
+  ggplot2::geom_line(ggplot2::aes(x = time, y = med)) +
+  ggplot2::geom_ribbon(ggplot2::aes(x = time, ymin = low, ymax = high)) +
+  ggplot2::facet_wrap(~pond_name)
+
+out_obs <- t(out_obs)
+
+out_obs <- as.data.frame(out_obs)
+
+out_obs2 <- out_obs |>
+  tibble::rownames_to_column(var = 'time_pond') |>
+  dplyr::mutate(timestep = sub(x = time_pond,
+                               pattern = '.*OBS\\[',
+                               replacement = ''),
+                timestep = sub(x = timestep,
+                               pattern = ',.*',
+                               replacement = ''),
+                pond = sub(x = time_pond,
+                           pattern = '.*,',
+                           replacement = ''),
+                pond = sub(x = pond,
+                           pattern = '\\]',
+                           replacement = '')) |>
+  tidyr::pivot_longer(-c(time_pond, timestep, pond),
+                      names_to = 'iter', values_to = 'val') |>
+  dplyr::group_by(pond, timestep) |>
+  dplyr::summarize(low = quantile(val, probs = 0.025),
+                   med = median(val),
+                   high = quantile(val, probs = 0.975))
+
+out_obs_mapped <- out_obs2 |>
+  dplyr::left_join(y = timesteps, by = 'timestep') |>
+  dplyr::left_join(y = ponds, by = 'pond') |>
+  dplyr::select(low, med, high, time, pond_name)
+
+pOBS <- out_obs_mapped |>
+  ggplot2::ggplot() +
+  ggplot2::geom_line(ggplot2::aes(x = time, y = med)) +
+  ggplot2::geom_ribbon(ggplot2::aes(x = time, ymin = low, ymax = high)) +
+  ggplot2::facet_wrap(~pond_name)
+
+cowplot::plot_grid(pX, pOBS)
+```
+
+### Probability of Crossing Threshold
+
+```{r}
+threshold_probs <- out_obs |>
+  tibble::rownames_to_column(var = 'time_pond') |>
+  dplyr::mutate(timestep = sub(x = time_pond,
+                               pattern = '.*OBS\\[',
+                               replacement = ''),
+                timestep = sub(x = timestep,
+                               pattern = ',.*',
+                               replacement = ''),
+                pond = sub(x = time_pond,
+                           pattern = '.*,',
+                           replacement = ''),
+                pond = sub(x = pond,
+                           pattern = '\\]',
+                           replacement = '')) |>
+  tidyr::pivot_longer(-c(time_pond, timestep, pond),
+                      names_to = 'iter', values_to = 'val') |>
+  dplyr::group_by(pond, timestep) |>
+  dplyr::summarize(n_iter = dplyr::n(),
+                   n_thresh = sum(val > 20),
+                   prob = (n_thresh / n_iter) * 100)
+
+threshold_probs_mapped <- threshold_probs |>
+  dplyr::left_join(y = timesteps, by = 'timestep') |>
+  dplyr::left_join(y = ponds, by = 'pond')
+
+threshold_probs_mapped |>
+  ggplot2::ggplot() +
+  ggplot2::geom_line(ggplot2::aes(x = time, y = prob)) +
+  ggplot2::facet_wrap(~pond_name)
+```
+
+Save these ouputs using a .RDataFile type
+
+```{r}
+save.image(file = "Corr_PooledMod_CRD85.RData")
+
+#Currently this has all the information in it. Eventually could limit this to be just the relavent information for the remaining code below
+```
+
+### Makeing Graphs
+
+Load in this file here as long as no code changes are needed above
+
+```{r}
+load(file = "Corr_PooledMod_CRD85.RData")
+```
+
+Creating some nice plots of these
+
+1. colored panel plot (each ponds forecast with the median, high, and low plus a trend line)
+
+```{r}
+# set up the colors here for the plots below so that each pond has the same color each time
+Mod_CRD85 <- out_obs_mapped
+str(Mod_CRD85)
+write.csv(Mod_CRD85, "Corr_Mod_CRD85.csv")
+
+# Define the custom color palette
+CR_colors <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "lightblue")
+
+# Ensure that CR_colors has the same length as the number of unique ponds
+unique_ponds <- unique(Mod_CRD85$pond_name)
+if (length(CR_colors) != length(unique_ponds)) {
+  stop("The number of colors in CR_colors does not match the number of unique ponds.")
+}
+
+# Create a named vector for CR_colors with pond names
+color_mapping <- setNames(CR_colors, unique_ponds)
+
+# Plotting
+Ponds_CRD85 <- ggplot(data = Mod_CRD85, aes(x = time)) +
+  geom_ribbon(aes(ymin = low, ymax = high, fill = pond_name)) +  # Add the ribbon with colors
+  geom_line(aes(y = med, color = pond_name)) +  # Ensure lines are visible and colored by pond
+  geom_smooth(aes(y = med, color = "grey"), size = 1) +  # Ensure lines are visible and colored by pond
+  geom_vline(xintercept = as.Date("2020-12-01"), linetype = "dashed", color = "red") +  # Add vertical dashed red line
+  facet_wrap(~ pond_name) +  # Facet by pond_name
+  scale_color_manual(values = color_mapping) +  # Use custom colors for lines
+  scale_fill_manual(values = color_mapping) +   # Use custom colors for ribbons
+  xlab("Year") +
+  ylab("Water Temperature (°C)") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5, size = 24),
+        axis.title = element_text(size = 22),
+        axis.text = element_text(size = 20),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none",
+        strip.text = element_text(size = 16))
+Ponds_CRD85
+
+ggsave("Corr_IndPonds_CRD85.png", plot = Ponds_CRD85, width = 8, height = 6)
+
+```
+
+2. trend by pond (geom smooth for each pond on the same plot for comparison)
+
+```{r}
+# using the same aestetics as above
+
+Trends_CRD85 <- ggplot(data = Mod_CRD85, aes(x = time)) +
+  geom_smooth(aes(y = med, color = pond_name, fill = pond_name), alpha = 0.15, size = 1) +  # Smooth lines with colors by pond_name
+  scale_color_manual(values = color_mapping) +
+  scale_fill_manual(values = color_mapping) +   # Use custom colors for ribbons
+  labs(
+       x = "Year",
+       y = "Water Temperature (°C)",
+       color = "Pond Name",
+       fill = "Pond Name") +  # Labels for legend
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5, size = 18),
+        axis.title = element_text(size = 22),
+        axis.text = element_text(size = 20),
+        legend.position = "right",
+        legend.text = element_text(size = 16), # Change the legend text size here
+        legend.title = element_text(size = 20))
+Trends_CRD85
+
+ggsave("Corr_IndTrends_CRD85.png", plot = Trends_CRD85, width = 9, height = 6)
+
+```
+
+3. probability plot (by pond)
+
+```{r}
+probs_CRD85 <- threshold_probs_mapped
+write.csv(probs_CRD85, "probs_CRD85.csv")
+
+Probs20_CRD85 <- ggplot(data = probs_CRD85, aes(x = time)) +
+  geom_line(aes(y = prob, color = pond_name)) +  # Ensure lines are visible and colored by pond
+  facet_wrap(~ pond_name) +  # Facet by pond_name
+  scale_color_manual(values = color_mapping) +  # Use custom colors for lines
+  xlab("Year") +
+  ylab("Probability") +
+  xlim(as.Date(c("2020-12-01", "2099-12-01"))) +
+  ylim(0,100) +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5, size = 18),
+        axis.title = element_text(size = 22),
+        axis.text = element_text(size = 18),
+        axis.text.x = element_text(angle = 55, hjust = 1),
+        legend.position = "none",
+        strip.text = element_text(size = 16))
+Probs20_CRD85
+
+ggsave("Corr_Probs20_CRD85.png", plot = Probs20_CRD85, width = 9, height = 6)
+```
+
+4. Model fits by pond
+
+```{r}
+Mod_CRD85
+
+ModObs <- Mod_CRD85 %>%
+  filter(time < "2021-01-01")
+range(ModObs$time)
+
+ModelErrorPlot_CRD85 <- ggplot(data = ModObs, aes(x = time)) +
+  geom_ribbon(aes(ymin = low, ymax = high, fill = pond_name)) +  # Adjust fill colors
+  geom_line(aes(y = med), color = "black") +  # Black lines for the median values
+  facet_wrap(~ pond_name) +  # Facet by pond_name
+  scale_fill_manual(values = color_mapping) +  # Apply custom color palette for ribbons
+  labs(
+       x = "Year",
+       y = "Water Temperature (°C)",
+       color = "Pond Name",
+       fill = "Pond Name") +  # Labels for legend
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5, size = 24),
+        axis.title = element_text(size = 22),
+        axis.text = element_text(size = 20),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none",
+        strip.text = element_text(size = 16))
+ModelErrorPlot_CRD85
+
+ggsave("Corr_Error_CRD85.png", plot = ModelErrorPlot_CRD85, width = 9, height = 6)
+```
+
+### Calculating NSE values
+```{r}
+Mod_CRD85
+
+# Filter this to only the observational data
+obs_CRD85 <- Mod_CRD85 %>%
+  filter(time < as.Date("2020-01-01")) %>%
+  ungroup() %>%
+  as.data.frame()
+
+# Convert the 'date' column in CR_WaterTemp85 to Date type and rename it to 'time'
+CR_WaterTemp85 <- CR_WaterTemp85 %>%
+  mutate(time = as.Date(date))
+
+# BVS ####
+BVS_CRD <- obs_CRD85 %>%
+  filter(pond_name == "BVS")
+
+# Perform the merge to combine the data frames based on the time/date columns
+BVS_combined <- BVS_CRD %>%
+  select(time, med) %>%
+  left_join(CR_WaterTemp85, by = "time")
+
+BVS_NSE <- NSE(BVS_combined$med, BVS_combined$BVS, na.rm = TRUE)
+BVS_NSE
+
+# CAB ####
+CAB_CRD <- obs_CRD85 %>%
+  filter(pond_name == "CAB")
+
+# Perform the merge to combine the data frames based on the time/date columns
+CAB_combined <- CAB_CRD %>%
+  select(time, med) %>%
+  left_join(CR_WaterTemp85, by = "time")
+
+CAB_NSE <- NSE(CAB_combined$med, CAB_combined$CAB, na.rm = TRUE)
+CAB_NSE
+
+# CAN ####
+CAN_CRD <- obs_CRD85 %>%
+  filter(pond_name == "CAN")
+
+# Perform the merge to combine the data frames based on the time/date columns
+CAN_combined <- CAN_CRD %>%
+  select(time, med) %>%
+  left_join(CR_WaterTemp85, by = "time")
+
+CAN_NSE <- NSE(CAN_combined$med, CAN_combined$CAN, na.rm = TRUE)
+CAN_NSE
+
+# CAN ####
+CAN_CRD <- obs_CRD85 %>%
+  filter(pond_name == "CAN")
+
+# Perform the merge to combine the data frames based on the time/date columns
+CAN_combined <- CAN_CRD %>%
+  select(time, med) %>%
+  left_join(CR_WaterTemp85, by = "time")
+
+CAN_NSE <- NSE(CAN_combined$med, CAN_combined$CAN, na.rm = TRUE)
+CAN_NSE
+```
+
+Clear out the environment and reload the basics before starting the next section
+
+```{r}
+rm(list = ls())
+
+library(tidyverse)
+library(rjags)
+library(ggplot2)
+
+set.seed(1)
+```
+
+# Continueing with Yakutat Forelands (YF)
+
+## RCP 4.5
+
+### Design the Model
+
+Read in the data here, which is an output of XX code file
+
+Then separate the data into air and water temperature files
+
+```{r}
+# Air and water temperature data: YF location, 4.5 scenario
+YF_Temps <- read.csv("YF_45SNAPForecast_MonCorr.csv", header=TRUE)
+
+# Air temperature variables
+YF_AirTemp45 <- YF_Temps %>%
+  select(date, Airport, Air_MonthAvg, std, precision, Region)
+
+# Water temperature variables
+YF_WaterTemp45 <- YF_Temps %>%
+  select(date, MP1, MP3, MP5, MP8, PL1, PL2, PL3, UBP1, UBP2, UBP3, UBP4)
+
+
+# Set up a string of all the dates
+time <- YF_WaterTemp45$date
+length(time)
+```
+
+Setting up the random walk model
+
+```{r}
+dlm_pooled <- "
+model{
+#### Priors
+for(p in 1:np){
+x[1,p] ~ dnorm(x_ic, tau_ic) # Initial condition of water temperature
+}
+tau_obs ~ dgamma(a_obs, r_obs) # Prior on observation error
+tau_add ~ dgamma(a_add, r_add) # Prior on process error
+
+#### Fixed Effects
+beta ~ dmnorm(mu_beta, tau_beta) # Prior on beta coefficients
+
+for(p in 1:np){
+int[p] ~ dnorm(mu_int, tau_int) # Prior on pond-specific intercepts
+}
+
+#### Data Model
+for(t in 1:n){ # loop over all time steps
+for(p in 1:np){
+OBS[t,p] ~ dnorm(x[t,p], tau_obs) # Observed water temperature is drawn from latent air temperature with observation uncertainty
+}
+Xf[t] ~ dnorm(muAirTemp[t], tauAirTemp[t]) # Latent air temperature is drawn from mean and precision of forecasated air temperature
+}
+
+#### Process Model
+for(t in 2:n){ # loop over all time steps except teh first (we defined ic above)
+for(p in 1:np){
+mu[t,p] <- x[t-1,p] + int[p] + beta[1] * x[t-1,p] + beta[2] * Xf[t] # Mean water temperature is a function of the previous time step and current air temperature
+x[t,p] ~ dnorm(mu[t,p], tau_add) # Latent water temperature is drawn from mean water temperature with process uncertainty
+}
+}
+}
+"
+```
+
+Define the data and priors for the model
+
+```{r}
+# Empty list
+data <- list()
+# Water temperature observations
+data$OBS <- dplyr::select(YF_WaterTemp45, -date)
+# Number of time steps
+data$n <- nrow(data$OBS)
+# Number of ponds
+data$np <- ncol(data$OBS)
+# Initial water temperature mean
+data$x_ic <- 0.1
+# Initial water temperature precision
+data$tau_ic = 0.1
+# Prior parameters for observation and process uncertainty
+data$a_obs = 1
+data$r_obs = 1
+data$a_add = 1
+data$r_add = 1
+# Prior parameters for beta coefficients
+data$mu_beta <- c(0, 0)
+data$tau_beta <- diag(x = c(0.001, 0.001), nrow = 2, ncol = 2)
+# Prior parameters for intercept
+data$mu_int <- 0
+data$tau_int <- 0.001
+# Mean air temperature estimate
+data$muAirTemp <- YF_AirTemp45$Air_MonthAvg
+# Air temperature precision
+data$tauAirTemp <- YF_AirTemp45$precision
+
+```
+
+Create JAGS model with 3 chains
+
+```{r}
+jm <- jags.model(file = textConnection(dlm_pooled), data = data, n.chains = 3)
+```
+
+Posterior samples of parameters
+
+```{r}
+YF45_out_params <- coda.samples(model = jm,
+                               variable.names = c('beta', 'int',
+                                                  'tau_add', 'tau_obs'),
+                               n.iter = 100000, thin = 25)
+```
+
+Posterior samples of response variables
+
+```{r}
+YF45_out_response <- coda.samples(model = jm,
+                                 variable.names = c('x', 'OBS'),
+                                 n.iter = 100000, thin = 25)
+```
+
+A couple quick checks here
+
+```{r}
+# plot(YF45_out_params)
+gelman.diag(YF45_out_params, confidence = 0.99)
+
+```
+
+Visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's
+
+Transform the samples back from the log domain to the linear domain
+
+```{r}
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(YF45_out_response)         ## convert from coda to matrix
+```
+
+code from AMW for splitting up this matrix
+```{r}
+x_cols <- grep('^x', colnames(out))
+obs_cols <- grep('^OBS', colnames(out))
+
+out_x <- out[,x_cols]
+out_obs <- out[,obs_cols]
+
+rm(out)
+
+out_x <- t(out_x)
+
+out_x <- as.data.frame(out_x)
+out_x2 <- out_x |>
+  tibble::rownames_to_column(var = 'time_pond') |>
+  dplyr::mutate(timestep = sub(x = time_pond,
+                               pattern = '.*x\\[',
+                               replacement = ''),
+                timestep = sub(x = timestep,
+                               pattern = ',.*',
+                               replacement = ''),
+                pond = sub(x = time_pond,
+                           pattern = '.*,',
+                           replacement = ''),
+                pond = sub(x = pond,
+                           pattern = '\\]',
+                           replacement = '')) |>
+  tidyr::pivot_longer(-c(time_pond, timestep, pond),
+                      names_to = 'iter', values_to = 'val') |>
+  dplyr::group_by(pond, timestep) |>
+  dplyr::summarize(low = quantile(val, probs = 0.025),
+                   med = median(val),
+                   high = quantile(val, probs = 0.975))
+
+timesteps <- as.data.frame(time)
+timesteps$ind <- as.character(seq(from = 1, to = nrow(timesteps), by = 1))
+colnames(timesteps) <- c('time', 'timestep')
+
+ponds <- as.data.frame(colnames(YF_WaterTemp45[-1]))
+ponds$ind <- as.character(seq(from = 1, to = nrow(ponds), by = 1))
+colnames(ponds) <- c('pond_name', 'pond')
+
+out_x_mapped <- out_x2 |>
+  dplyr::left_join(y = timesteps, by = 'timestep') |>
+  dplyr::left_join(y = ponds, by = 'pond') |>
+  dplyr::select(low, med, high, time, pond_name)
+
+pX <- out_x_mapped |>
+  ggplot2::ggplot() +
+  ggplot2::geom_line(ggplot2::aes(x = time, y = med)) +
+  ggplot2::geom_ribbon(ggplot2::aes(x = time, ymin = low, ymax = high)) +
+  ggplot2::facet_wrap(~pond_name)
+
+out_obs <- t(out_obs)
+
+out_obs <- as.data.frame(out_obs)
+
+out_obs2 <- out_obs |>
+  tibble::rownames_to_column(var = 'time_pond') |>
+  dplyr::mutate(timestep = sub(x = time_pond,
+                               pattern = '.*OBS\\[',
+                               replacement = ''),
+                timestep = sub(x = timestep,
+                               pattern = ',.*',
+                               replacement = ''),
+                pond = sub(x = time_pond,
+                           pattern = '.*,',
+                           replacement = ''),
+                pond = sub(x = pond,
+                           pattern = '\\]',
+                           replacement = '')) |>
+  tidyr::pivot_longer(-c(time_pond, timestep, pond),
+                      names_to = 'iter', values_to = 'val') |>
+  dplyr::group_by(pond, timestep) |>
+  dplyr::summarize(low = quantile(val, probs = 0.025),
+                   med = median(val),
+                   high = quantile(val, probs = 0.975))
+
+out_obs_mapped <- out_obs2 |>
+  dplyr::left_join(y = timesteps, by = 'timestep') |>
+  dplyr::left_join(y = ponds, by = 'pond') |>
+  dplyr::select(low, med, high, time, pond_name)
+
+pOBS <- out_obs_mapped |>
+  ggplot2::ggplot() +
+  ggplot2::geom_line(ggplot2::aes(x = time, y = med)) +
+  ggplot2::geom_ribbon(ggplot2::aes(x = time, ymin = low, ymax = high)) +
+  ggplot2::facet_wrap(~pond_name)
+
+cowplot::plot_grid(pX, pOBS)
+```
+
+### Probability of Crossing Threshold
+
+```{r}
+threshold_probs <- out_obs |>
+  tibble::rownames_to_column(var = 'time_pond') |>
+  dplyr::mutate(timestep = sub(x = time_pond,
+                               pattern = '.*OBS\\[',
+                               replacement = ''),
+                timestep = sub(x = timestep,
+                               pattern = ',.*',
+                               replacement = ''),
+                pond = sub(x = time_pond,
+                           pattern = '.*,',
+                           replacement = ''),
+                pond = sub(x = pond,
+                           pattern = '\\]',
+                           replacement = '')) |>
+  tidyr::pivot_longer(-c(time_pond, timestep, pond),
+                      names_to = 'iter', values_to = 'val') |>
+  dplyr::group_by(pond, timestep) |>
+  dplyr::summarize(n_iter = dplyr::n(),
+                   n_thresh = sum(val > 20),
+                   prob = (n_thresh / n_iter) * 100)
+
+threshold_probs_mapped <- threshold_probs |>
+  dplyr::left_join(y = timesteps, by = 'timestep') |>
+  dplyr::left_join(y = ponds, by = 'pond')
+
+threshold_probs_mapped |>
+  ggplot2::ggplot() +
+  ggplot2::geom_line(ggplot2::aes(x = time, y = prob)) +
+  ggplot2::facet_wrap(~pond_name)
+```
+
+Save these ouputs using a .RDataFile type
+
+```{r}
+save.image(file = "Corr_PooledMod_YF45.RData")
+
+#Currently this has all the information in it. Eventually could limit this to be just the relavent information for the remaining code below
+```
+
+### Making Graphs
+
+Load in this file here as long as no code changes are needed above
+
+```{r}
+load(file = "Corr_PooledMod_YF45.RData")
+```
+
+Creating some nice plots of these
+
+1. colored panel plot (each ponds forecast with the median, high, and low plus a trend line)
+```{r}
+# set up the colors here for the plots below so that each pond has the same color each time
+Mod_YF45 <- out_obs_mapped
+str(Mod_YF45)
+write.csv(Mod_YF45, "Mod_YF45.csv")
+
+# Define the custom color palette
+YF_colors <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "lightblue", "lightgreen", "#6A3D9A")
+
+# Ensure that YF_colors has the same length as the number of unique ponds
+unique_ponds <- unique(Mod_YF45$pond_name)
+if (length(YF_colors) != length(unique_ponds)) {
+  stop("The number of colors in YF_colors does not match the number of unique ponds.")
+}
+
+# Create a named vector for YF_colors with pond names
+color_mapping <- setNames(YF_colors, unique_ponds)
+
+# Plotting
+Ponds_YF45 <- ggplot(data = Mod_YF45, aes(x = time)) +
+  geom_ribbon(aes(ymin = low, ymax = high, fill = pond_name)) +  # Add the ribbon with colors
+  geom_line(aes(y = med, color = pond_name)) +  # Ensure lines are visible and colored by pond
+  geom_smooth(aes(y = med, color = "grey"), size = 1) +  # Ensure lines are visible and colored by pond
+  geom_vline(xintercept = as.Date("2020-12-01"), linetype = "dashed", color = "red") +  # Add vertical dashed red line
+  facet_wrap(~ pond_name) +  # Facet by pond_name
+  scale_color_manual(values = color_mapping) +  # Use custom colors for lines
+  scale_fill_manual(values = color_mapping) +   # Use custom colors for ribbons
+  xlab("Year") +
+  ylab("Water Temperature (°C)") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5, size = 24),
+        axis.title = element_text(size = 22),
+        axis.text = element_text(size = 20),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none",
+        strip.text = element_text(size = 16))
+Ponds_YF45
+
+ggsave("Corr_IndPonds_YF45.png", plot = Ponds_YF45, width = 8, height = 6)
+```
+
+2. Trend by pond (geom smooth for each pond on the same plot for comparison)
+
+```{r}
+# using the same aestetics as above
+
+Trends_YF45 <- ggplot(data = Mod_YF45, aes(x = time)) +
+  geom_smooth(aes(y = med, color = pond_name, fill = pond_name), alpha = 0.15, size = 1) +  # Smooth lines with colors by pond_name
+  scale_color_manual(values = color_mapping) +
+  scale_fill_manual(values = color_mapping) +   # Use custom colors for ribbons
+  labs(
+       x = "Year",
+       y = "Water Temperature (°C)",
+       color = "Pond Name",
+       fill = "Pond Name") +  # Labels for legend
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5, size = 18),
+        axis.title = element_text(size = 22),
+        axis.text = element_text(size = 20),
+        legend.position = "right",
+        legend.text = element_text(size = 16), # Change the legend text size here
+        legend.title = element_text(size = 20))
+Trends_YF45
+
+ggsave("Corr_IndTrends_YF45.png", plot = Trends_YF45, width = 9, height = 6)
+
+```
+
+3. probability plot (by pond)
+
+```{r}
+probs_YF45 <- threshold_probs_mapped
+write.csv(probs_YF45, "probs_YF45.csv")
+
+Probs20_YF45 <- ggplot(data = probs_YF45, aes(x = time)) +
+  geom_line(aes(y = prob, color = pond_name)) +  # Ensure lines are visible and colored by pond
+  facet_wrap(~ pond_name) +  # Facet by pond_name
+  scale_color_manual(values = color_mapping) +  # Use custom colors for lines
+  xlab("Year") +
+  ylab("Probability") +
+  xlim(as.Date(c("2020-12-01", "2099-12-01"))) +
+  ylim(0,100) +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5, size = 24),
+        axis.title = element_text(size = 22),
+        axis.text = element_text(size = 20),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none",
+        strip.text = element_text(size = 16))
+Probs20_YF45
+
+ggsave("Corr_Probs20_YF45.png", plot = Probs20_YF45, width = 10, height = 6)
+```
+
+4. Model fits by pond
+
+```{r}
+Mod_YF45
+
+ModObs <- Mod_YF45 %>%
+  filter(time < "2021-01-01")
+range(ModObs$time)
+
+ErrorPlot_YF45 <- ggplot(data = ModObs, aes(x = time)) +
+  geom_ribbon(aes(ymin = low, ymax = high, fill = pond_name)) +  # Adjust fill colors
+  geom_line(aes(y = med), color = "black") +  # Black lines for the median values
+  facet_wrap(~ pond_name) +  # Facet by pond_name
+  scale_fill_manual(values = color_mapping) +  # Apply custom color palette for ribbons
+  labs(
+       x = "Year",
+       y = "Water Temperature (°C)",
+       color = "Pond Name",
+       fill = "Pond Name") +  # Labels for legend
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.title = element_text(size = 22),
+    axis.text = element_text(size = 20),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none" # Angle x-axis labels if needed
+  )
+ErrorPlot_YF45
+
+ggsave("Corr_Error_YF45.png", plot = ErrorPlot_YF45, width = 9, height = 6)
+```
+
+Clear out the environment and reload the basics before starting the next section
+
+```{r}
+rm(list = ls())
+
+library(tidyverse)
+library(rjags)
+library(ggplot2)
+
+set.seed(1)
+```
+
+## RCP 8.5
+
+### Design the Model
+
+Read in the data here, which is an output of XX code file
+
+Then separate the data into air and water temperature files
+
+```{r}
+# Air and water temperature data: YF location, 4.5 scenario
+YF_Temps <- read.csv("YF_85SNAPForecast_MonCorr.csv", header=TRUE)
+
+# Air temperature variables
+YF_AirTemp85 <- YF_Temps %>%
+  select(date, Airport, Air_MonthAvg, std, precision, Region)
+
+# Water temperature variables
+YF_WaterTemp85 <- YF_Temps %>%
+  select(date, MP1, MP3, MP5, MP8, PL1, PL2, PL3, UBP1, UBP2, UBP3, UBP4)
+
+
+# Set up a string of all the dates
+time <- YF_WaterTemp85$date
+length(time)
+```
+
+Setting up the random walk model
+
+```{r}
+dlm_pooled <- "
+model{
+#### Priors
+for(p in 1:np){
+x[1,p] ~ dnorm(x_ic, tau_ic) # Initial condition of water temperature
+}
+tau_obs ~ dgamma(a_obs, r_obs) # Prior on observation error
+tau_add ~ dgamma(a_add, r_add) # Prior on process error
+
+#### Fixed Effects
+beta ~ dmnorm(mu_beta, tau_beta) # Prior on beta coefficients
+
+for(p in 1:np){
+int[p] ~ dnorm(mu_int, tau_int) # Prior on pond-specific intercepts
+}
+
+#### Data Model
+for(t in 1:n){ # loop over all time steps
+for(p in 1:np){
+OBS[t,p] ~ dnorm(x[t,p], tau_obs) # Observed water temperature is drawn from latent air temperature with observation uncertainty
+}
+Xf[t] ~ dnorm(muAirTemp[t], tauAirTemp[t]) # Latent air temperature is drawn from mean and precision of forecasated air temperature
+}
+
+#### Process Model
+for(t in 2:n){ # loop over all time steps except teh first (we defined ic above)
+for(p in 1:np){
+mu[t,p] <- x[t-1,p] + int[p] + beta[1] * x[t-1,p] + beta[2] * Xf[t] # Mean water temperature is a function of the previous time step and current air temperature
+x[t,p] ~ dnorm(mu[t,p], tau_add) # Latent water temperature is drawn from mean water temperature with process uncertainty
+}
+}
+}
+"
+```
+
+Define the data and priors for the model
+
+```{r}
+# Empty list
+data <- list()
+# Water temperature observations
+data$OBS <- dplyr::select(YF_WaterTemp85, -date)
+# Number of time steps
+data$n <- nrow(data$OBS)
+# Number of ponds
+data$np <- ncol(data$OBS)
+# Initial water temperature mean
+data$x_ic <- 0.1
+# Initial water temperature precision
+data$tau_ic = 0.1
+# Prior parameters for observation and process uncertainty
+data$a_obs = 1
+data$r_obs = 1
+data$a_add = 1
+data$r_add = 1
+# Prior parameters for beta coefficients
+data$mu_beta <- c(0, 0)
+data$tau_beta <- diag(x = c(0.001, 0.001), nrow = 2, ncol = 2)
+# Prior parameters for intercept
+data$mu_int <- 0
+data$tau_int <- 0.001
+# Mean air temperature estimate
+data$muAirTemp <- YF_AirTemp85$Air_MonthAvg
+# Air temperature precision
+data$tauAirTemp <- YF_AirTemp85$precision
+
+```
+
+Create JAGS model with 3 chains
+
+```{r}
+jm <- jags.model(file = textConnection(dlm_pooled), data = data, n.chains = 3)
+```
+
+Posterior samples of parameters
+
+```{r}
+YF85_out_params <- coda.samples(model = jm,
+                               variable.names = c('beta', 'int',
+                                                  'tau_add', 'tau_obs'),
+                               n.iter = 50000, thin = 25)
+```
+
+Posterior samples of response variables
+
+```{r}
+YF85_out_response <- coda.samples(model = jm,
+                                 variable.names = c('x', 'OBS'),
+                                 n.iter = 100000, thin = 25)
+```
+
+A couple quick checks here
+
+```{r}
+# plot(YF85_out_params)
+gelman.diag(YF85_out_params, confidence = 0.99)
+
+```
+
+Visualize the output by just looking at the **95% Credible interval of the time-series of X's** and compare that to the observed Y's
+
+Transform the samples back from the log domain to the linear domain
+
+```{r}
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(YF85_out_response)         ## convert from coda to matrix
+```
+
+code from AMW for splitting up this matrix
+```{r}
+x_cols <- grep('^x', colnames(out))
+obs_cols <- grep('^OBS', colnames(out))
+
+out_x <- out[,x_cols]
+out_obs <- out[,obs_cols]
+
+rm(out)
+
+out_x <- t(out_x)
+
+out_x <- as.data.frame(out_x)
+out_x2 <- out_x |>
+  tibble::rownames_to_column(var = 'time_pond') |>
+  dplyr::mutate(timestep = sub(x = time_pond,
+                               pattern = '.*x\\[',
+                               replacement = ''),
+                timestep = sub(x = timestep,
+                               pattern = ',.*',
+                               replacement = ''),
+                pond = sub(x = time_pond,
+                           pattern = '.*,',
+                           replacement = ''),
+                pond = sub(x = pond,
+                           pattern = '\\]',
+                           replacement = '')) |>
+  tidyr::pivot_longer(-c(time_pond, timestep, pond),
+                      names_to = 'iter', values_to = 'val') |>
+  dplyr::group_by(pond, timestep) |>
+  dplyr::summarize(low = quantile(val, probs = 0.025),
+                   med = median(val),
+                   high = quantile(val, probs = 0.975))
+
+timesteps <- as.data.frame(time)
+timesteps$ind <- as.character(seq(from = 1, to = nrow(timesteps), by = 1))
+colnames(timesteps) <- c('time', 'timestep')
+
+ponds <- as.data.frame(colnames(YF_WaterTemp85[-1]))
+ponds$ind <- as.character(seq(from = 1, to = nrow(ponds), by = 1))
+colnames(ponds) <- c('pond_name', 'pond')
+
+out_x_mapped <- out_x2 |>
+  dplyr::left_join(y = timesteps, by = 'timestep') |>
+  dplyr::left_join(y = ponds, by = 'pond') |>
+  dplyr::select(low, med, high, time, pond_name)
+
+pX <- out_x_mapped |>
+  ggplot2::ggplot() +
+  ggplot2::geom_line(ggplot2::aes(x = time, y = med)) +
+  ggplot2::geom_ribbon(ggplot2::aes(x = time, ymin = low, ymax = high)) +
+  ggplot2::facet_wrap(~pond_name)
+
+out_obs <- t(out_obs)
+
+out_obs <- as.data.frame(out_obs)
+
+out_obs2 <- out_obs |>
+  tibble::rownames_to_column(var = 'time_pond') |>
+  dplyr::mutate(timestep = sub(x = time_pond,
+                               pattern = '.*OBS\\[',
+                               replacement = ''),
+                timestep = sub(x = timestep,
+                               pattern = ',.*',
+                               replacement = ''),
+                pond = sub(x = time_pond,
+                           pattern = '.*,',
+                           replacement = ''),
+                pond = sub(x = pond,
+                           pattern = '\\]',
+                           replacement = '')) |>
+  tidyr::pivot_longer(-c(time_pond, timestep, pond),
+                      names_to = 'iter', values_to = 'val') |>
+  dplyr::group_by(pond, timestep) |>
+  dplyr::summarize(low = quantile(val, probs = 0.025),
+                   med = median(val),
+                   high = quantile(val, probs = 0.975))
+
+out_obs_mapped <- out_obs2 |>
+  dplyr::left_join(y = timesteps, by = 'timestep') |>
+  dplyr::left_join(y = ponds, by = 'pond') |>
+  dplyr::select(low, med, high, time, pond_name)
+
+pOBS <- out_obs_mapped |>
+  ggplot2::ggplot() +
+  ggplot2::geom_line(ggplot2::aes(x = time, y = med)) +
+  ggplot2::geom_ribbon(ggplot2::aes(x = time, ymin = low, ymax = high)) +
+  ggplot2::facet_wrap(~pond_name)
+
+cowplot::plot_grid(pX, pOBS)
+```
+
+### Probability of Crossing Threshold
+
+```{r}
+threshold_probs <- out_obs |>
+  tibble::rownames_to_column(var = 'time_pond') |>
+  dplyr::mutate(timestep = sub(x = time_pond,
+                               pattern = '.*OBS\\[',
+                               replacement = ''),
+                timestep = sub(x = timestep,
+                               pattern = ',.*',
+                               replacement = ''),
+                pond = sub(x = time_pond,
+                           pattern = '.*,',
+                           replacement = ''),
+                pond = sub(x = pond,
+                           pattern = '\\]',
+                           replacement = '')) |>
+  tidyr::pivot_longer(-c(time_pond, timestep, pond),
+                      names_to = 'iter', values_to = 'val') |>
+  dplyr::group_by(pond, timestep) |>
+  dplyr::summarize(n_iter = dplyr::n(),
+                   n_thresh = sum(val > 20),
+                   prob = (n_thresh / n_iter) * 100)
+
+threshold_probs_mapped <- threshold_probs |>
+  dplyr::left_join(y = timesteps, by = 'timestep') |>
+  dplyr::left_join(y = ponds, by = 'pond')
+
+threshold_probs_mapped |>
+  ggplot2::ggplot() +
+  ggplot2::geom_line(ggplot2::aes(x = time, y = prob)) +
+  ggplot2::facet_wrap(~pond_name)
+```
+
+Save these ouputs using a .RDataFile type
+
+```{r}
+save.image(file = "Corr_PooledMod_YF85.RData")
+
+#Currently this has all the information in it. Eventually could limit this to be just the relavent information for the remaining code below
+```
+
+### Making Graphs
+
+Load in this file here as long as no code changes are needed above
+
+```{r}
+load(file = "Corr_PooledMod_YF85.RData")
+```
+
+Creating some nice plots of these
+
+1. colored panel plot (each ponds forecast with the median, high, and low plus a trend line)
+```{r}
+# set up the colors here for the plots below so that each pond has the same color each time
+Mod_YF85 <- out_obs_mapped
+str(Mod_YF85)
+write.csv(Mod_YF85, "Mod_YF85.csv")
+
+# Define the custom color palette
+YF_colors <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "lightblue", "lightgreen", "#6A3D9A")
+
+# Ensure that YF_colors has the same length as the number of unique ponds
+unique_ponds <- unique(Mod_YF85$pond_name)
+if (length(YF_colors) != length(unique_ponds)) {
+  stop("The number of colors in YF_colors does not match the number of unique ponds.")
+}
+
+# Create a named vector for YF_colors with pond names
+color_mapping <- setNames(YF_colors, unique_ponds)
+
+# Plotting
+Ponds_YF85 <- ggplot(data = Mod_YF85, aes(x = time)) +
+  geom_ribbon(aes(ymin = low, ymax = high, fill = pond_name)) +  # Add the ribbon with colors
+  geom_line(aes(y = med, color = pond_name)) +  # Ensure lines are visible and colored by pond
+  geom_smooth(aes(y = med, color = "grey"), size = 1) +  # Ensure lines are visible and colored by pond
+  geom_vline(xintercept = as.Date("2020-12-01"), linetype = "dashed", color = "red") +  # Add vertical dashed red line
+  facet_wrap(~ pond_name) +  # Facet by pond_name
+  scale_color_manual(values = color_mapping) +  # Use custom colors for lines
+  scale_fill_manual(values = color_mapping) +   # Use custom colors for ribbons
+  xlab("Year") +
+  ylab("Water Temperature (°C)") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5, size = 24),
+        axis.title = element_text(size = 22),
+        axis.text = element_text(size = 20),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none",
+        strip.text = element_text(size = 16))
+Ponds_YF85
+
+ggsave("Corr_IndPonds_YF85.png", plot = Ponds_YF85, width = 8, height = 6)
+
+```
+
+Create plots of the trend by pond (geom smooth for each pond on the same plot for comparison)
+
+```{r}
+# using the same aestetics as above
+
+Trends_YF85 <- ggplot(data = Mod_YF85, aes(x = time)) +
+  geom_smooth(aes(y = med, color = pond_name, fill = pond_name), alpha = 0.15, size = 1) +  # Smooth lines with colors by pond_name
+  scale_color_manual(values = color_mapping) +
+  scale_fill_manual(values = color_mapping) +   # Use custom colors for ribbons
+  labs(
+       x = "Year",
+       y = "Water Temperature (°C)",
+       color = "Pond Name",
+       fill = "Pond Name") +  # Labels for legend
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5, size = 18),
+        axis.title = element_text(size = 22),
+        axis.text = element_text(size = 20),
+        legend.position = "right",
+        legend.text = element_text(size = 16), # Change the legend text size here
+        legend.title = element_text(size = 20))
+Trends_YF85
+
+ggsave("Corr_IndTrends_YF85.png", plot = Trends_YF85, width = 9, height = 6)
+
+```
+
+3. probability plot (by pond)
+
+```{r}
+probs_YF85 <- threshold_probs_mapped
+write.csv(probs_YF85, "probs_YF85.csv")
+
+Probs20_YF85 <- ggplot(data = probs_YF85, aes(x = time)) +
+  geom_line(aes(y = prob, color = pond_name)) +  # Ensure lines are visible and colored by pond
+  facet_wrap(~ pond_name) +  # Facet by pond_name
+  scale_color_manual(values = color_mapping) +  # Use custom colors for lines
+  xlab("Year") +
+  ylab("Probability") +
+  xlim(as.Date(c("2020-12-01", "2099-12-01"))) +
+  ylim(0,100) +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5, size = 24),
+        axis.title = element_text(size = 22),
+        axis.text = element_text(size = 20),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none",
+        strip.text = element_text(size = 16))
+Probs20_YF85
+
+ggsave("Corr_Probs20_YF85.png", plot = Probs20_YF85, width = 9, height = 6)
+```
+
+4. Model fits by pond
+
+```{r}
+Mod_YF85
+
+ModObs <- Mod_YF85 %>%
+  filter(time < "2021-01-01")
+range(ModObs$time)
+
+ModelErrorPlot_YF85 <- ggplot(data = ModObs, aes(x = time)) +
+  geom_ribbon(aes(ymin = low, ymax = high, fill = pond_name)) +  # Adjust fill colors
+  geom_line(aes(y = med), color = "black") +  # Black lines for the median values
+  facet_wrap(~ pond_name) +  # Facet by pond_name
+  scale_fill_manual(values = color_mapping) +  # Apply custom color palette for ribbons
+  labs(
+       x = "Year",
+       y = "Water Temperature (°C)",
+       color = "Pond Name",
+       fill = "Pond Name") +  # Labels for legend
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5, size = 18),
+        axis.title = element_text(size = 22),
+        axis.text = element_text(size = 20),
+        axis.text.x = element_text(angle = 65, hjust = 1),
+        legend.position = "none",
+        strip.text = element_text(size = 16))
+ModelErrorPlot_YF85
+
+ggsave("Corr_Error_YF85.png", plot = ModelErrorPlot_YF85, width = 9, height = 6)
+```
+
+Clear the environment
+
+```{r}
+rm(list = ls())
+```
+

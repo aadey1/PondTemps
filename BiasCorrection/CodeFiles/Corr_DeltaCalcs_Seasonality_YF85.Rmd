@@ -1,0 +1,212 @@
+---
+title: "Pond Temps - Delta Graphs and Seasonal Trends"
+output: html_notebook
+---
+This is code used to make plots based on output from the "IndividualPondModels_Forecasts85" for boththe CR and YF
+Read in the output files for each pond/RCP combination then work on delta figures and figures like Hamlet et al. 2020
+
+```{r}
+rm(list = ls())
+
+library(tidyverse)
+library(dplyr)
+library(rjags)
+library(ggplot2)
+
+set.seed(1)
+```
+
+Starting with the Yakutat Forelands
+
+RCP 85
+
+# Reading in the data
+```{r}
+# Load required libraries
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(ggpubr)
+
+# Reading in the data
+Mod_YF85 <- read.csv("Corr_Mod_YF85.csv", header = TRUE)
+
+# Convert 'time' column to Date format
+Mod_YF85$time <- as.Date(Mod_YF85$time, format = "%Y-%m-%d")
+
+# Extract year and month information
+Mod_YF85 <- Mod_YF85 %>%
+  mutate(Year = year(time),
+         Month = format(time, "%B"))
+
+```
+
+# Making plots of error by season
+
+## 2012-2020
+```{r}
+# Extract unique pond names
+short_names <- unique(Mod_YF85$pond_name)
+
+# Initialize an empty dataframe to store monthly mean results
+monthly_means <- data.frame(Pond = character(), Month = character(), AvgTemp = numeric(), Year = numeric(), stringsAsFactors = FALSE)
+
+# Loop through each pond
+for (short_name in short_names) {
+  # Filter data for the current pond
+  pond_data <- subset(Mod_YF85, pond_name == short_name & Year >= 2012 & Year <= 2020)
+  
+  # Loop through each month
+  for (month in month.name) {
+    # Filter data for the current month
+    filtered_data <- subset(pond_data, Month == month)
+    
+    # Calculate the mean of 'med' for the current month
+    avg_med <- mean(filtered_data$med, na.rm = TRUE)
+    
+    # Append results to monthly_means dataframe
+    monthly_means <- rbind(monthly_means, data.frame(Pond = short_name, Month = month, AvgTemp = avg_med, Year = 2020))
+  }
+}
+
+# Plotting the data
+ggplot(monthly_means, aes(x = Month, y = AvgTemp, color = Pond, group = Pond)) +
+  geom_line() +
+  geom_point() +
+  scale_x_discrete(limits = month.name) +
+  labs(title = "Monthly Average Temperatures for Each Pond (2012–2020)",
+       x = "Month",
+       y = "Average Temperature (°C)",
+       color = "Pond") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+## 2030, 2060, and 2090
+```{r}
+# Define the correct order for months
+month_order <- c("January", "February", "March", "April", "May", "June", 
+                 "July", "August", "September", "October", "November", "December")
+
+# Function to calculate monthly averages by decade
+calculate_monthly_averages <- function(data, decade_start, decade_end) {
+  monthly_avg_table <- data.frame(Pond = character(), Month = character(), AvgTemp = numeric(), Year = integer(), stringsAsFactors = FALSE)
+  
+  for (yr in decade_start:decade_end) {
+    yearly_data <- data %>% filter(Year == yr)
+    
+    for (pond_name in unique(data$pond_name)) {
+      pond_data <- yearly_data %>% filter(pond_name == pond_name)
+      
+      for (month in month_order) {
+        monthly_data <- pond_data %>% filter(format(time, "%B") == month)
+        
+        avg_temp <- mean(monthly_data$med, na.rm = TRUE)
+        
+        monthly_avg_table <- rbind(monthly_avg_table, data.frame(
+          Pond = pond_name,
+          Month = month,
+          AvgTemp = avg_temp,
+          Year = yr
+        ))
+      }
+    }
+  }
+  return(monthly_avg_table)
+}
+
+# Calculate averages for each decade
+monthly_avgX50_table_2030s <- calculate_monthly_averages(Mod_YF85, 2030, 2039)
+monthly_avgX50_table_2060s <- calculate_monthly_averages(Mod_YF85, 2060, 2069)
+monthly_avgX50_table_2090s <- calculate_monthly_averages(Mod_YF85, 2090, 2099)
+
+```
+# Combine all the monthly average tables into one dataframe 
+
+```{r}
+# Add a Decade column to each dataframe
+monthly_means <- monthly_means %>% mutate(Decade = "2020s")
+monthly_avgX50_table_2030s <- monthly_avgX50_table_2030s %>% mutate(Decade = "2030s")
+monthly_avgX50_table_2060s <- monthly_avgX50_table_2060s %>% mutate(Decade = "2060s")
+monthly_avgX50_table_2090s <- monthly_avgX50_table_2090s %>% mutate(Decade = "2090s")
+
+# Combine all data into one dataframe
+combined_monthly_avg <- bind_rows(
+  monthly_means,
+  monthly_avgX50_table_2030s,
+  monthly_avgX50_table_2060s,
+  monthly_avgX50_table_2090s
+)
+
+# Reference year data
+ref_year_avg <- combined_monthly_avg %>%
+  filter(Year == 2020) %>%
+  group_by(Month) %>%
+  summarise(avg_temp_ref_year = mean(AvgTemp, na.rm = TRUE))
+
+# Calculate differences
+combined_monthly_avg_with_diff <- combined_monthly_avg %>%
+  left_join(ref_year_avg, by = "Month") %>%
+  mutate(diff_AvgTemp = AvgTemp - avg_temp_ref_year) %>%
+  filter(!is.na(diff_AvgTemp))  # Remove rows with missing differences
+
+
+```
+
+# Calculate the differences here as compared to 2020
+```{r}
+# Group by month and decade, calculate statistics
+summary_stats2 <- combined_monthly_avg_with_diff %>%
+  mutate(Month = factor(Month, levels = month_order)) %>%
+  group_by(Month, Decade) %>%
+  summarise(
+    mean_diff_AvgTemp = mean(diff_AvgTemp, na.rm = TRUE),
+    sd_diff_AvgTemp = sd(diff_AvgTemp, na.rm = TRUE)
+  )
+
+# Function to create decade plots
+create_decade_plot <- function(decade) {
+  data <- summary_stats2 %>% filter(Decade == decade)
+  
+  ggplot(data, aes(x = as.numeric(Month))) +
+    geom_line(aes(y = mean_diff_AvgTemp)) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+    geom_ribbon(aes(ymin = mean_diff_AvgTemp - sd_diff_AvgTemp, ymax = mean_diff_AvgTemp + sd_diff_AvgTemp),
+                fill = "blue", alpha = 0.3) +
+    scale_x_continuous(breaks = 1:12, labels = month.abb) +
+    ylim(-4, 6) +
+    theme_classic() +
+    labs(title = paste("Delta Temp:", decade),
+         x = "", y = "Delta Temp (°C)") +
+    theme(axis.text.x = element_text(angle = 65, hjust = 1))
+}
+
+# Generate plots
+MonthlyStats_2030Plot <- create_decade_plot("2030s")
+MonthlyStats_2060Plot <- create_decade_plot("2060s")
+MonthlyStats_2090Plot <- create_decade_plot("2090s")
+
+# Combine plots
+DeltaMonth_YF85_plot <- ggarrange(MonthlyStats_2030Plot, MonthlyStats_2060Plot, MonthlyStats_2090Plot, ncol = 3)
+DeltaMonth_YF85_plot
+
+# Save plot
+ggsave("Corr_DeltaMonthYF85.png", plot = DeltaMonth_YF85_plot, width = 12, height = 3)
+
+```
+
+
+Combine the plots together here for now
+```{r}
+library(ggpubr)
+
+DeltaMonth_YF85_plot <- ggarrange(plot_2030s, plot_2060s, plot_2090s, ncol = 3)
+ggsave("Corr_DeltaMonthYF85.png", plot = DeltaMonth_YF85_plot, width = 12, height = 4)
+
+write.csv(summary_stats %>% filter(Decade == "2030s"), "Corr_MonthlyStatsYF85_2030.csv")
+write.csv(summary_stats %>% filter(Decade == "2060s"), "Corr_MonthlyStatsYF85_2060.csv")
+write.csv(summary_stats %>% filter(Decade == "2090s"), "Corr_MonthlyStatsYF85_2090.csv")
+
+```
+

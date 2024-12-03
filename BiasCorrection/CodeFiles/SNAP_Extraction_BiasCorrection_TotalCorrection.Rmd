@@ -1,0 +1,1347 @@
+---
+title: "SNAP Data Extraction and Bias Correction File"
+output: html_notebook
+---
+
+Setting up the data so that the difference between the SNAP data and the airport specific data.
+
+Step 1: Extract the RCP Site data from the SNAP 5 model averages.
+
+Step 2: Import both data sets
+
+Step 3: Set up the Z-score calculation based on notes from meeting with Alan Hamlet
+
+Step 4: Calculate the average and standard deviation of the daily differences
+
+Step 5 (not in this file): rerun models with the new forecast temperatures -- List these files here after the fact to make sure this is up to date
+
+Load in the packages needed
+
+```{r}
+library(dplyr)
+```
+
+Setting up the workspace
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+setwd("~/Library/CloudStorage/Dropbox/SWEL/CopperRiverDelta/PondTemps/DataAnalysis/PondTempsAnalysis")
+```
+
+# Extracting the RCP data from the aat file
+
+## Read in the data
+
+```{r}
+load("~/Dropbox/SWEL/CopperRiverDelta/PondTemps/DataAnalysis/PondTempsAnalysis/forecasted_temperature.RData")
+
+str(aat)
+```
+This comes in as a datafile with columns temperature, rcp, model, month, year, site, and date
+
+## Extract the data
+
+```{r}
+# selecting CRD
+CRD <- aat %>%
+  dplyr::filter(site == "cord")
+
+# filter for each rcp
+CR_4.5 <- CRD %>%
+  dplyr::filter(rcp == "45")
+
+CR_6.0 <- CRD %>%
+  dplyr::filter(rcp == "60")
+
+CR_8.5 <- CRD %>%
+  dplyr::filter(rcp == "85")
+
+# selecting YF
+YF <- aat %>%
+  dplyr::filter(site == "yak")
+
+# filter for each rcp
+YF_4.5 <- YF %>%
+  dplyr::filter(rcp == "45")
+
+YF_6.0 <- YF %>%
+  dplyr::filter(rcp == "60")
+
+YF_8.5 <- YF%>%
+  dplyr::filter(rcp == "85")
+```
+
+
+```{r}
+ggplot()+
+   geom_smooth(data = CR_8.5, aes(x = date, y = temperature, color = "red")) +
+   geom_smooth(data = CR_4.5, aes(x = date, y = temperature, color = "blue"))
+ 
+
+
+```
+
+## Starting with the RCP 4.5 data 
+
+### Filtering to 4.5
+```{r}
+CR_4.5
+
+# Group by date (year and month combination) and calculate average temperature
+avg_CR_4.5 <- CR_4.5 %>%
+  group_by(date) %>%
+  summarise(avg_temperature = mean(temperature, na.rm = TRUE),
+            std_temperature = sd(temperature, na.rm = TRUE),
+            precision = 1 / (sd(temperature, na.rm = TRUE)^2))
+
+# View the resulting dataframe
+print(avg_CR_4.5)
+
+CR_4.5 <- avg_CR_4.5
+CR_4.5
+```
+
+
+```{r}
+YF_4.5
+
+# Group by date (year and month combination) and calculate average temperature
+avg_YF_4.5 <- YF_4.5 %>%
+  group_by(date) %>%
+  summarise(avg_temperature = mean(temperature, na.rm = TRUE),
+            std_temperature = sd(temperature, na.rm = TRUE),
+            precision = 1 / (sd(temperature, na.rm = TRUE)^2))
+
+# View the resulting dataframe
+print(avg_YF_4.5)
+
+YF_4.5 <- avg_YF_4.5
+YF_4.5
+```
+
+### Plot the forecasted data
+
+```{r}
+CR_4.5
+
+# Full time frame (2006-2100)
+CR_SNAP <- ggplot(data = CR_4.5, mapping = aes(x = date)) +
+  geom_line(aes(y = avg_temperature), size = 0.8) +  # Line plot for avg_temperature
+  geom_ribbon(aes(ymin = avg_temperature - std_temperature, 
+                  ymax = avg_temperature + std_temperature),  # Ribbon for uncertainty
+              alpha = 0.5, fill = "blue") +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Copper River SNAP Forecast - RCP 4.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+CR_SNAP
+
+
+ggsave("CR_Geo_Forecast4.5_2020.jpeg", plot = CR_SNAP, width = 8, height = 6)
+```
+
+
+```{r}
+YF_4.5
+
+# Full time frame (2006-2100)
+YF_SNAP <- ggplot(data = YF_4.5, mapping = aes(x = date)) +
+  geom_line(aes(y = avg_temperature), size = 0.8) +  # Line plot for avg_temperature
+  geom_ribbon(aes(ymin = avg_temperature - std_temperature,
+                  ymax = avg_temperature + std_temperature),  # Ribbon for uncertainty
+              alpha = 0.5, fill = "blue") +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Yakutat Foreland SNAP Forecast - RCP 4.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+YF_SNAP
+
+
+ggsave("YF_Geo_Forecast4.5_2020.jpeg", plot = YF_SNAP, width = 8, height = 6)
+```
+
+## Continuing with the RCP 6.0 data
+
+### Filtering to 6.0
+```{r}
+CR_6.0
+
+# Group by date (year and month combination) and calculate average temperature
+avg_CR_6.0 <- CR_6.0 %>%
+  group_by(date) %>%
+  summarise(avg_temperature = mean(temperature, na.rm = TRUE),
+            std_temperature = sd(temperature, na.rm = TRUE),
+            precision = 1 / (sd(temperature, na.rm = TRUE)^2))
+
+# View the resulting dataframe
+print(avg_CR_6.0)
+
+CR_6.0 <- avg_CR_6.0
+CR_6.0
+```
+
+
+```{r}
+YF_6.0
+
+# Group by date (year and month combination) and calculate average temperature
+avg_YF_6.0 <- YF_6.0 %>%
+  group_by(date) %>%
+  summarise(avg_temperature = mean(temperature, na.rm = TRUE),
+            std_temperature = sd(temperature, na.rm = TRUE),
+            precision = 1 / (sd(temperature, na.rm = TRUE)^2))
+
+# View the resulting dataframe
+print(avg_YF_6.0)
+
+YF_6.0 <- avg_YF_6.0
+YF_6.0
+```
+
+### Plot the forecasted data
+
+```{r}
+CR_6.0
+
+# Full time frame (2006-2100)
+CR_SNAP <- ggplot(data = CR_6.0, mapping = aes(x = date)) +
+  geom_line(aes(y = avg_temperature), size = 0.8) +  # Line plot for avg_temperature
+  geom_ribbon(aes(ymin = avg_temperature - std_temperature, 
+                  ymax = avg_temperature + std_temperature),  # Ribbon for uncertainty
+              alpha = 0.5, fill = "blue") +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Copper River SNAP Forecast - RCP 6.0") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+CR_SNAP
+
+
+ggsave("CR_Geo_Forecast6.0_2020.jpeg", plot = CR_SNAP, width = 8, height = 6)
+```
+
+```{r}
+YF_6.0
+
+# Full time frame (2006-2100)
+YF_SNAP <- ggplot(data = YF_6.0, mapping = aes(x = date)) +
+  geom_line(aes(y = avg_temperature), size = 0.8) +  # Line plot for avg_temperature
+  geom_ribbon(aes(ymin = avg_temperature - std_temperature,
+                  ymax = avg_temperature + std_temperature),  # Ribbon for uncertainty
+              alpha = 0.5, fill = "blue") +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Yakutat Foreland SNAP Forecast - RCP 6.0") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+YF_SNAP
+
+
+ggsave("YF_Geo_Forecast6.0_2020.jpeg", plot = YF_SNAP, width = 8, height = 6)
+```
+
+## Continuing with the RCP 8.5 data
+
+### Filtering to 8.5
+```{r}
+CR_8.5
+
+# Group by date (year and month combination) and calculate average temperature
+avg_CR_8.5 <- CR_8.5 %>%
+  group_by(date) %>%
+  summarise(avg_temperature = mean(temperature, na.rm = TRUE),
+            std_temperature = sd(temperature, na.rm = TRUE),
+            precision = 1 / (sd(temperature, na.rm = TRUE)^2))
+
+# View the resulting dataframe
+print(avg_CR_8.5)
+
+CR_8.5 <- avg_CR_8.5
+CR_8.5
+```
+
+
+```{r}
+YF_8.5
+
+# Group by date (year and month combination) and calculate average temperature
+avg_YF_8.5 <- YF_8.5 %>%
+  group_by(date) %>%
+  summarise(avg_temperature = mean(temperature, na.rm = TRUE),
+            std_temperature = sd(temperature, na.rm = TRUE),
+            precision = 1 / (sd(temperature, na.rm = TRUE)^2))
+
+# View the resulting dataframe
+print(avg_YF_8.5)
+
+YF_8.5 <- avg_YF_8.5
+YF_8.5
+```
+
+### Plot the forecasted data
+
+```{r}
+CR_8.5
+
+# Full time frame (2006-2100)
+CR_SNAP <- ggplot(data = CR_8.5, mapping = aes(x = date)) +
+  geom_line(aes(y = avg_temperature), size = 0.8) +  # Line plot for avg_temperature
+  geom_ribbon(aes(ymin = avg_temperature - std_temperature, 
+                  ymax = avg_temperature + std_temperature),  # Ribbon for uncertainty
+              alpha = 0.5, fill = "blue") +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Copper River SNAP Forecast - RCP 8.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+CR_SNAP
+
+
+ggsave("CR_Geo_Forecast8.5_2020.jpeg", plot = CR_SNAP, width = 8, height = 6)
+```
+
+```{r}
+YF_8.5
+
+# Full time frame (2006-2100)
+YF_SNAP <- ggplot(data = YF_8.5, mapping = aes(x = date)) +
+  geom_line(aes(y = avg_temperature), size = 0.8) +  # Line plot for avg_temperature
+  geom_ribbon(aes(ymin = avg_temperature - std_temperature,
+                  ymax = avg_temperature + std_temperature),  # Ribbon for uncertainty
+              alpha = 0.5, fill = "blue") +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Yakutat Foreland SNAP Forecast - RCP 8.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+YF_SNAP
+
+
+ggsave("YF_Geo_Forecast8.5_2020.jpeg", plot = YF_SNAP, width = 8, height = 6)
+```
+
+Saving the data as datafiles for later use
+
+```{r}
+write.csv(YF_4.5, file = "BiasCorrection/Geo_BiasCorrection/DataFiles/SNAP_YF45.csv", row.names = FALSE)
+write.csv(YF_6.0, file = "BiasCorrection/Geo_BiasCorrection/DataFiles/SNAP_YF60.csv", row.names = FALSE)
+write.csv(YF_8.5, file = "BiasCorrection/Geo_BiasCorrection/DataFiles/SNAP_YF85.csv", row.names = FALSE)
+
+write.csv(CR_4.5, file = "BiasCorrection/Geo_BiasCorrection/DataFiles/SNAP_CR45.csv", row.names = FALSE)
+write.csv(CR_6.0, file = "BiasCorrection/Geo_BiasCorrection/DataFiles/SNAP_CR60.csv", row.names = FALSE)
+write.csv(CR_8.5, file = "BiasCorrection/Geo_BiasCorrection/DataFiles/SNAP_CR85.csv", row.names = FALSE)
+```
+
+If these above is already done, start here and just read in the files that were created ^
+```{r}
+YF_45 <- read.csv(file = "BiasCorrection/Geo_BiasCorrection/DataFiles/SNAP_YF45.csv")
+YF_85 <- read.csv(file = "BiasCorrection/Geo_BiasCorrection/DataFiles/SNAP_YF85.csv")
+
+CR_45 <- read.csv(file = "BiasCorrection/Geo_BiasCorrection/DataFiles/SNAP_CR45.csv")
+CR_85 <- read.csv(file = "BiasCorrection/Geo_BiasCorrection/DataFiles/SNAP_CR85.csv")
+
+```
+
+Read in the data file for the airport temperature data
+  Separate this by airport location
+
+```{r}
+CRD_airport <- read.csv(file = "BiasCorrection/CR_PondAirTemp_mean.csv")
+CRD_airport <- CRD_airport %>%
+  select(-X)
+
+YF_airport <- read.csv(file = "BiasCorrection/YF_PondAirTemp_mean.csv")
+YF_airport <- YF_airport %>%
+  select(-X)
+```
+
+# Copper River RCP 4.5
+
+Read in the data
+```{r}
+# Read data files
+CR_45 <- read.csv(file = "BiasCorrection/Geo_BiasCorrection/DataFiles/SNAP_CR45.csv")
+CRD_airport <- read.csv(file = "BiasCorrection/CR_PondAirTemp_mean.csv")
+CRD_airport <- CRD_airport %>% select(-X)  # Remove unnecessary column 'X'
+
+```
+
+Check dates
+
+```{r}
+# Fix 'date' in CR_45 to ensure it's in Date format
+CR_45$date <- as.Date(paste("01", CR_45$date), format = "%d %b %Y")
+
+# Ensure that there are no NAs in the 'date' column after conversion
+sum(is.na(CR_45$date))  # Check if there are any missing values (should be 0)
+
+```
+
+Trim dates
+
+```{r}
+# Trim CR_45 to the date range of CRD_airport
+start_date <- min(CRD_airport$Date)
+end_date <- max(CRD_airport$Date)
+
+# Subset CR_45 to match the date range of CRD_airport
+CR_45_trimmed <- CR_45 %>%
+  filter(date >= start_date & date <= end_date)
+
+```
+
+Plot pre-correction data
+
+```{r}
+library(ggplot2)
+
+# Ensure 'Date' in CRD_airport is in Date format
+CRD_airport$Date <- as.Date(CRD_airport$Date)
+
+# Check structure of CR_45_trimmed to confirm correct Date column
+str(CR_45_trimmed)
+
+# Plot Observed vs Uncorrected Predicted Temperatures
+Plot <- ggplot() +
+  geom_line(data = CR_45_trimmed, aes(x = date, y = avg_temperature, color = "Predicted (Uncorrected)"), size = 1.2) +
+  geom_line(data = CRD_airport, aes(x = Date, y = Air_MonthAvg, color = "Observed"), size = 1.2) +
+  labs(
+    title = "Observed vs Uncorrected Predicted Temperatures - CRD RCP 4.5",
+    x = "Date",
+    y = "Temperature (°C)",
+    color = "Temperature Type"
+  ) +
+  scale_x_date(
+    date_labels = "%b %Y",    # Format x-axis as Month-Year
+    date_breaks = "1 month",  # Set breaks every month
+    expand = c(0, 0)          # Remove extra space at the edges
+  ) +
+  scale_color_manual(values = c("Predicted (Uncorrected)" = "red", "Observed" = "black")) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+Plot
+
+ggsave("BiasCorrection/Geo_BiasCorrection/Plots/Pre-CorrectionComparison_CR45.jpeg", plot = Plot, width = 8, height = 6)
+
+```
+
+z-score bias correction
+
+```{r}
+# Calculate mean and standard deviation for observed and predicted temperatures
+mu_obs <- mean(CRD_airport$Air_MonthAvg, na.rm = TRUE)
+sigma_obs <- sd(CRD_airport$Air_MonthAvg, na.rm = TRUE)
+
+mu_pred <- mean(CR_45_trimmed$avg_temperature, na.rm = TRUE)
+sigma_pred <- sd(CR_45_trimmed$avg_temperature, na.rm = TRUE)
+
+```
+
+Correction applied to the 2012-2020 dataset
+
+```{r}
+# Apply the z-score bias correction to the predicted data
+CR_45_trimmed$corrected_temp <- (CR_45_trimmed$avg_temperature - mu_pred) / sigma_pred * sigma_obs + mu_obs
+
+# Check the first few rows to verify
+head(CR_45_trimmed)
+
+```
+
+Plot corrected and observed values
+
+```{r}
+# Plotting Observed vs Corrected Predicted Temperatures
+Plot <- ggplot() +
+  geom_line(data = CR_45_trimmed, aes(x = date, y = corrected_temp, color = "Predicted (Corrected)"), size = 1.2, linetype = "dashed") +
+  geom_line(data = CRD_airport, aes(x = Date, y = Air_MonthAvg, color = "Observed"), size = 1.2) +
+  labs(
+    title = "Observed vs Corrected Predicted Temperatures - CRD RCP 4.5",
+    x = "Date",
+    y = "Temperature (°C)",
+    color = "Temperature Type"
+  ) +
+  scale_x_date(
+    date_labels = "%b %Y",    # Format x-axis as Month-Year
+    date_breaks = "1 month",  # Set breaks every month
+    expand = c(0, 0)          # Remove extra space at the edges
+  ) +
+  scale_color_manual(values = c("Predicted (Corrected)" = "blue", "Observed" = "black")) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic"),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+Plot
+
+ggsave("BiasCorrection/Geo_BiasCorrection/Plots/Corrected_CR45.jpeg", plot = Plot, width = 8, height = 6)
+```
+
+Plotting the values here
+
+```{r}
+# Plot Original vs Corrected Predicted Temperatures (No Observed Values)
+Plot <- ggplot() +
+  # Plot the original predicted temperatures (uncorrected)
+  geom_line(data = CR_45_trimmed, aes(x = date, y = avg_temperature, color = "Predicted (Uncorrected)"), size = 1.2, linetype = "solid") +
+  
+  # Plot the corrected predicted temperatures
+  geom_line(data = CR_45_trimmed, aes(x = date, y = corrected_temp, color = "Predicted (Corrected)"), size = 1.2, linetype = "dashed") +
+  
+  # Set plot labels
+  labs(
+    title = "Original vs Corrected Predicted Temperatures - CRD RCP 4.5",
+    x = "Date",
+    y = "Temperature (°C)",
+    color = "Temperature Type"
+  ) +
+  
+  # Customize x-axis to show months/years clearly
+  scale_x_date(
+    date_labels = "%b %Y",    # Format x-axis as Month-Year
+    date_breaks = "1 month",  # Set breaks every month
+    expand = c(0, 0)          # Remove extra space at the edges
+  ) +
+  
+  # Define custom colors for the plot
+  scale_color_manual(values = c("Predicted (Uncorrected)" = "red", "Predicted (Corrected)" = "blue")) +
+  
+  # Minimal theme for the plot
+  theme_minimal() +
+  
+  # Customizations for appearance
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels for clarity
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+Plot
+
+ggsave("BiasCorrection/Geo_BiasCorrection/Plots/CorrectedComparison_CR45.jpeg", plot = Plot, width = 8, height = 6)
+
+```
+Correction applied to the whole dataset
+
+```{r}
+# Apply the z-score bias correction to the predicted data
+CR_45$corrected_temp <- (CR_45$avg_temperature - mu_pred) / sigma_pred * sigma_obs + mu_obs
+
+# Check the first few rows to verify
+head(CR_45)
+```
+
+Plot this to make it into the same predicted (corrected) + predicted (uncorrected) with the error included
+
+```{r}
+# Plot Original vs Corrected Predicted Temperatures (No Observed Values)
+Plot <- ggplot() +
+  # Plot the original predicted temperatures (uncorrected)
+  geom_line(data = CR_45, aes(x = date, y = avg_temperature, color = "Predicted (Uncorrected)"), size = 1.2, linetype = "solid") +
+  
+  # Plot the corrected predicted temperatures
+  geom_line(data = CR_45, aes(x = date, y = corrected_temp, color = "Predicted (Corrected)"), size = 1.2, linetype = "dashed") +
+  
+  geom_line(data = CRD_airport, aes(x = Date, y = Air_MonthAvg, color = "Observed"), size = 1.2) +
+  
+  # Set plot labels
+  labs(
+    title = "Original vs Corrected Predicted Temperatures - CRD RCP 4.5",
+    x = "Date",
+    y = "Temperature (°C)",
+    color = "Temperature Type"
+  ) +
+  
+  # Customize x-axis to show months/years clearly
+  scale_x_date(
+    date_labels = "%b %Y",    # Format x-axis as Month-Year
+    date_breaks = "1 month",  # Set breaks every month
+    expand = c(0, 0)          # Remove extra space at the edges
+  ) +
+  
+  # Define custom colors for the plot
+  scale_color_manual(values = c("Predicted (Uncorrected)" = "red", "Predicted (Corrected)" = "blue")) +
+  
+  # Minimal theme for the plot
+  theme_minimal() +
+  
+  # Customizations for appearance
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels for clarity
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+Plot
+
+ggsave("BiasCorrection/Geo_BiasCorrection/Plots/FullCorrection_CR45.jpeg", plot = Plot, width = 8, height = 6)
+
+```
+
+Save the new file
+
+```{r}
+# Save the updated dataset with the corrected temperatures to a new CSV file
+write.csv(CR_45, "BiasCorrection/Geo_BiasCorrection/DataFiles/SNAP_CR45_corrected.csv", row.names = FALSE)
+
+```
+
+# Copper River RCP 8.5
+
+Read in the data
+```{r}
+# Read data files
+CR_85 <- read.csv(file = "BiasCorrection/Geo_BiasCorrection/DataFiles/SNAP_CR85.csv")
+CRD_airport <- read.csv(file = "BiasCorrection/CR_PondAirTemp_mean.csv")
+CRD_airport <- CRD_airport %>% select(-X)  # Remove unnecessary column 'X'
+
+```
+
+Check dates
+
+```{r}
+# Fix 'date' in CR_85 to ensure it's in Date format
+CR_85$date <- as.Date(paste("01", CR_85$date), format = "%d %b %Y")
+
+# Ensure that there are no NAs in the 'date' column after conversion
+sum(is.na(CR_85$date))  # Check if there are any missing values (should be 0)
+
+```
+
+Trim dates
+
+```{r}
+# Trim CR_85 to the date range of CRD_airport
+start_date <- min(CRD_airport$Date)
+end_date <- max(CRD_airport$Date)
+
+# Subset CR_85 to match the date range of CRD_airport
+CR_85_trimmed <- CR_85 %>%
+  filter(date >= start_date & date <= end_date)
+
+```
+
+Plot pre-correction data
+
+```{r}
+library(ggplot2)
+
+# Ensure 'Date' in CRD_airport is in Date format
+CRD_airport$Date <- as.Date(CRD_airport$Date)
+
+# Check structure of CR_85_trimmed to confirm correct Date column
+str(CR_85_trimmed)
+
+# Plot Observed vs Uncorrected Predicted Temperatures
+Plot <- ggplot() +
+  geom_line(data = CR_85_trimmed, aes(x = date, y = avg_temperature, color = "Predicted (Uncorrected)"), size = 1.2) +
+  geom_line(data = CRD_airport, aes(x = Date, y = Air_MonthAvg, color = "Observed"), size = 1.2) +
+  labs(
+    title = "Observed vs Uncorrected Predicted Temperatures - CRD RCP 8.5",
+    x = "Date",
+    y = "Temperature (°C)",
+    color = "Temperature Type"
+  ) +
+  scale_x_date(
+    date_labels = "%b %Y",    # Format x-axis as Month-Year
+    date_breaks = "1 month",  # Set breaks every month
+    expand = c(0, 0)          # Remove extra space at the edges
+  ) +
+  scale_color_manual(values = c("Predicted (Uncorrected)" = "red", "Observed" = "black")) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 85, hjust = 1),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+Plot
+
+ggsave("BiasCorrection/Geo_BiasCorrection/Plots/Pre-CorrectionComparison_CR85.jpeg", plot = Plot, width = 8, height = 6)
+```
+
+z-score bias correction
+
+```{r}
+# Calculate mean and standard deviation for observed and predicted temperatures
+mu_obs <- mean(CRD_airport$Air_MonthAvg, na.rm = TRUE)
+sigma_obs <- sd(CRD_airport$Air_MonthAvg, na.rm = TRUE)
+
+mu_pred <- mean(CR_85_trimmed$avg_temperature, na.rm = TRUE)
+sigma_pred <- sd(CR_85_trimmed$avg_temperature, na.rm = TRUE)
+
+```
+
+Correction applied to the 2012-2020 dataset
+
+```{r}
+# Apply the z-score bias correction to the predicted data
+CR_85_trimmed$corrected_temp <- (CR_85_trimmed$avg_temperature - mu_pred) / sigma_pred * sigma_obs + mu_obs
+
+# Check the first few rows to verify
+head(CR_85_trimmed)
+
+```
+
+Plot corrected and observed values
+
+```{r}
+# Plotting Observed vs Corrected Predicted Temperatures
+Plot <- ggplot() +
+  geom_line(data = CR_85_trimmed, aes(x = date, y = corrected_temp, color = "Predicted (Corrected)"), size = 1.2, linetype = "dashed") +
+  geom_line(data = CRD_airport, aes(x = Date, y = Air_MonthAvg, color = "Observed"), size = 1.2) +
+  labs(
+    title = "Observed vs Corrected Predicted Temperatures - CRD RCP 8.5",
+    x = "Date",
+    y = "Temperature (°C)",
+    color = "Temperature Type"
+  ) +
+  scale_x_date(
+    date_labels = "%b %Y",    # Format x-axis as Month-Year
+    date_breaks = "1 month",  # Set breaks every month
+    expand = c(0, 0)          # Remove extra space at the edges
+  ) +
+  scale_color_manual(values = c("Predicted (Corrected)" = "blue", "Observed" = "black")) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 85, hjust = 1),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic"),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+Plot
+
+ggsave("BiasCorrection/Geo_BiasCorrection/Plots/Corrected_CR85.jpeg", plot = Plot, width = 8, height = 6)
+```
+
+Plotting the values here
+
+```{r}
+# Plot Original vs Corrected Predicted Temperatures (No Observed Values)
+Plot <- ggplot() +
+  # Plot the original predicted temperatures (uncorrected)
+  geom_line(data = CR_85_trimmed, aes(x = date, y = avg_temperature, color = "Predicted (Uncorrected)"), size = 1.2, linetype = "solid") +
+  
+  # Plot the corrected predicted temperatures
+  geom_line(data = CR_85_trimmed, aes(x = date, y = corrected_temp, color = "Predicted (Corrected)"), size = 1.2, linetype = "dashed") +
+  
+  # Set plot labels
+  labs(
+    title = "Original vs Corrected Predicted Temperatures - CRD RCP 8.5",
+    x = "Date",
+    y = "Temperature (°C)",
+    color = "Temperature Type"
+  ) +
+  
+  # Customize x-axis to show months/years clearly
+  scale_x_date(
+    date_labels = "%b %Y",    # Format x-axis as Month-Year
+    date_breaks = "1 month",  # Set breaks every month
+    expand = c(0, 0)          # Remove extra space at the edges
+  ) +
+  
+  # Define custom colors for the plot
+  scale_color_manual(values = c("Predicted (Uncorrected)" = "red", "Predicted (Corrected)" = "blue")) +
+  
+  # Minimal theme for the plot
+  theme_minimal() +
+  
+  # Customizations for appearance
+  theme(
+    axis.text.x = element_text(angle = 85, hjust = 1),  # Rotate x-axis labels for clarity
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+Plot
+
+ggsave("BiasCorrection/Geo_BiasCorrection/Plots/CorrectedComparison_CR85.jpeg", plot = Plot, width = 8, height = 6)
+
+```
+Correction applied to the whole dataset
+
+```{r}
+# Apply the z-score bias correction to the predicted data
+CR_85$corrected_temp <- (CR_85$avg_temperature - mu_pred) / sigma_pred * sigma_obs + mu_obs
+
+# Check the first few rows to verify
+head(CR_85)
+```
+
+Plot this to make it into the same predicted (corrected) + predicted (uncorrected) with the error included
+
+```{r}
+# Plot Original vs Corrected Predicted Temperatures (No Observed Values)
+Plot <- ggplot() +
+  # Plot the original predicted temperatures (uncorrected)
+  geom_line(data = CR_85, aes(x = date, y = avg_temperature, color = "Predicted (Uncorrected)"), size = 1.2, linetype = "solid") +
+  
+  # Plot the corrected predicted temperatures
+  geom_line(data = CR_85, aes(x = date, y = corrected_temp, color = "Predicted (Corrected)"), size = 1.2, linetype = "dashed") +
+  
+  geom_line(data = CRD_airport, aes(x = Date, y = Air_MonthAvg, color = "Observed"), size = 1.2) +
+  
+  # Set plot labels
+  labs(
+    title = "Original vs Corrected Predicted Temperatures - CRD RCP 8.5",
+    x = "Date",
+    y = "Temperature (°C)",
+    color = "Temperature Type"
+  ) +
+  
+  # Customize x-axis to show months/years clearly
+  scale_x_date(
+    date_labels = "%b %Y",    # Format x-axis as Month-Year
+    date_breaks = "1 month",  # Set breaks every month
+    expand = c(0, 0)          # Remove extra space at the edges
+  ) +
+  
+  # Define custom colors for the plot
+  scale_color_manual(values = c("Predicted (Uncorrected)" = "red", "Predicted (Corrected)" = "blue")) +
+  
+  # Minimal theme for the plot
+  theme_minimal() +
+  
+  # Customizations for appearance
+  theme(
+    axis.text.x = element_text(angle = 85, hjust = 1),  # Rotate x-axis labels for clarity
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+Plot
+
+ggsave("BiasCorrection/Geo_BiasCorrection/Plots/FullCorrection_CR85.jpeg", plot = Plot, width = 8, height = 6)
+```
+
+Save the new file
+
+```{r}
+# Save the updated dataset with the corrected temperatures to a new CSV file
+write.csv(CR_85, "BiasCorrection/Geo_BiasCorrection/DataFiles/SNAP_CR85_corrected.csv", row.names = FALSE)
+
+```
+
+# Yakutat Foreland RCP 4.5
+
+Read in the data
+```{r}
+# Read data files
+YF_45 <- read.csv(file = "BiasCorrection/Geo_BiasCorrection/DataFiles/SNAP_YF45.csv")
+YF_airport <- read.csv(file = "BiasCorrection/YF_PondAirTemp_mean.csv")
+YF_airport <- YF_airport %>% select(-X)  # Remove unnecessary column 'X'
+
+```
+
+Check dates
+
+```{r}
+# Fix 'date' in YF_45 to ensure it's in Date format
+YF_45$date <- as.Date(paste("01", YF_45$date), format = "%d %b %Y")
+
+# Ensure that there are no NAs in the 'date' column after conversion
+sum(is.na(YF_45$date))  # Check if there are any missing values (should be 0)
+
+```
+
+Trim dates
+
+```{r}
+# Trim YF_45 to the date range of YF_airport
+start_date <- min(YF_airport$Date)
+end_date <- max(YF_airport$Date)
+
+# Subset YF_45 to match the date range of YF_airport
+YF_45_trimmed <- YF_45 %>%
+  filter(date >= start_date & date <= end_date)
+
+```
+
+Plot pre-correction data
+
+```{r}
+library(ggplot2)
+
+# Ensure 'Date' in YF_airport is in Date format
+YF_airport$Date <- as.Date(YF_airport$Date)
+
+# Check structure of YF_45_trimmed to confirm correct Date column
+str(YF_45_trimmed)
+
+# Plot Observed vs Uncorrected Predicted Temperatures
+Plot <- ggplot() +
+  geom_line(data = YF_45_trimmed, aes(x = date, y = avg_temperature, color = "Predicted (Uncorrected)"), size = 1.2) +
+  geom_line(data = YF_airport, aes(x = Date, y = Air_MonthAvg, color = "Observed"), size = 1.2) +
+  labs(
+    title = "Observed vs Uncorrected Predicted Temperatures - YF 4.5",
+    x = "Date",
+    y = "Temperature (°C)",
+    color = "Temperature Type"
+  ) +
+  scale_x_date(
+    date_labels = "%b %Y",    # Format x-axis as Month-Year
+    date_breaks = "1 month",  # Set breaks every month
+    expand = c(0, 0)          # Remove extra space at the edges
+  ) +
+  scale_color_manual(values = c("Predicted (Uncorrected)" = "red", "Observed" = "black")) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+Plot
+
+ggsave("BiasCorrection/Geo_BiasCorrection/Plots/Pre-CorrectionComparison_YF45.jpeg", plot = Plot, width = 8, height = 6)
+
+```
+
+z-score bias correction
+
+```{r}
+# Calculate mean and standard deviation for observed and predicted temperatures
+mu_obs <- mean(YF_airport$Air_MonthAvg, na.rm = TRUE)
+sigma_obs <- sd(YF_airport$Air_MonthAvg, na.rm = TRUE)
+
+mu_pred <- mean(YF_45_trimmed$avg_temperature, na.rm = TRUE)
+sigma_pred <- sd(YF_45_trimmed$avg_temperature, na.rm = TRUE)
+
+```
+
+Correction applied to the 2012-2020 dataset
+
+```{r}
+# Apply the z-score bias correction to the predicted data
+YF_45_trimmed$corrected_temp <- (YF_45_trimmed$avg_temperature - mu_pred) / sigma_pred * sigma_obs + mu_obs
+
+# Check the first few rows to verify
+head(YF_45_trimmed)
+
+```
+
+Plot corrected and observed values
+
+```{r}
+# Plotting Observed vs Corrected Predicted Temperatures
+Plot <- ggplot() +
+  geom_line(data = YF_45_trimmed, aes(x = date, y = corrected_temp, color = "Predicted (Corrected)"), size = 1.2, linetype = "dashed") +
+  geom_line(data = YF_airport, aes(x = Date, y = Air_MonthAvg, color = "Observed"), size = 1.2) +
+  labs(
+    title = "Observed vs Corrected Predicted Temperatures - YF RCP 4.5",
+    x = "Date",
+    y = "Temperature (°C)",
+    color = "Temperature Type"
+  ) +
+  scale_x_date(
+    date_labels = "%b %Y",    # Format x-axis as Month-Year
+    date_breaks = "1 month",  # Set breaks every month
+    expand = c(0, 0)          # Remove extra space at the edges
+  ) +
+  scale_color_manual(values = c("Predicted (Corrected)" = "blue", "Observed" = "black")) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic"),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+Plot
+
+ggsave("BiasCorrection/Geo_BiasCorrection/Plots/Corrected_YF45.jpeg", plot = Plot, width = 8, height = 6)
+```
+
+Plotting the values here
+
+```{r}
+# Plot Original vs Corrected Predicted Temperatures (No Observed Values)
+Plot <- ggplot() +
+  # Plot the original predicted temperatures (uncorrected)
+  geom_line(data = YF_45_trimmed, aes(x = date, y = avg_temperature, color = "Predicted (Uncorrected)"), size = 1.2, linetype = "solid") +
+  
+  # Plot the corrected predicted temperatures
+  geom_line(data = YF_45_trimmed, aes(x = date, y = corrected_temp, color = "Predicted (Corrected)"), size = 1.2, linetype = "dashed") +
+  
+  # Set plot labels
+  labs(
+    title = "Original vs Corrected Predicted Temperatures - YF RCP 4.5",
+    x = "Date",
+    y = "Temperature (°C)",
+    color = "Temperature Type"
+  ) +
+  
+  # Customize x-axis to show months/years clearly
+  scale_x_date(
+    date_labels = "%b %Y",    # Format x-axis as Month-Year
+    date_breaks = "1 month",  # Set breaks every month
+    expand = c(0, 0)          # Remove extra space at the edges
+  ) +
+  
+  # Define custom colors for the plot
+  scale_color_manual(values = c("Predicted (Uncorrected)" = "red", "Predicted (Corrected)" = "blue")) +
+  
+  # Minimal theme for the plot
+  theme_minimal() +
+  
+  # Customizations for appearance
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels for clarity
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+Plot
+
+ggsave("BiasCorrection/Geo_BiasCorrection/Plots/CorrectedComparison_YF45.jpeg", plot = Plot, width = 8, height = 6)
+
+```
+Correction applied to the whole dataset
+
+```{r}
+# Apply the z-score bias correction to the predicted data
+YF_45$corrected_temp <- (YF_45$avg_temperature - mu_pred) / sigma_pred * sigma_obs + mu_obs
+
+# Check the first few rows to verify
+head(YF_45)
+```
+
+Plot this to make it into the same predicted (corrected) + predicted (uncorrected) with the error included
+
+```{r}
+# Plot Original vs Corrected Predicted Temperatures (No Observed Values)
+Plot <- ggplot() +
+  # Plot the original predicted temperatures (uncorrected)
+  geom_line(data = YF_45, aes(x = date, y = avg_temperature, color = "Predicted (Uncorrected)"), size = 1.2, linetype = "solid") +
+  
+  # Plot the corrected predicted temperatures
+  geom_line(data = YF_45, aes(x = date, y = corrected_temp, color = "Predicted (Corrected)"), size = 1.2, linetype = "dashed") +
+  
+  geom_line(data = YF_airport, aes(x = Date, y = Air_MonthAvg, color = "Observed"), size = 1.2) +
+  
+  # Set plot labels
+  labs(
+    title = "Original vs Corrected Predicted Temperatures - YF RCP 4.5",
+    x = "Date",
+    y = "Temperature (°C)",
+    color = "Temperature Type"
+  ) +
+  
+  # Customize x-axis to show months/years clearly
+  scale_x_date(
+    date_labels = "%b %Y",    # Format x-axis as Month-Year
+    date_breaks = "1 month",  # Set breaks every month
+    expand = c(0, 0)          # Remove extra space at the edges
+  ) +
+  
+  # Define custom colors for the plot
+  scale_color_manual(values = c("Predicted (Uncorrected)" = "red", "Predicted (Corrected)" = "blue")) +
+  
+  # Minimal theme for the plot
+  theme_minimal() +
+  
+  # Customizations for appearance
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels for clarity
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+Plot
+
+ggsave("BiasCorrection/Geo_BiasCorrection/Plots/FullCorrection_YF45.jpeg", plot = Plot, width = 8, height = 6)
+```
+
+Save the new file
+
+```{r}
+# Save the updated dataset with the corrected temperatures to a new CSV file
+write.csv(YF_45, "BiasCorrection/Geo_BiasCorrection/DataFiles/SNAP_YF45_corrected.csv", row.names = FALSE)
+
+```
+
+
+# Yakutat Foreland RCP 8.5
+
+Read in the data
+```{r}
+# Read data files
+YF_85 <- read.csv(file = "BiasCorrection/Geo_BiasCorrection/DataFiles/SNAP_YF85.csv")
+YF_airport <- read.csv(file = "BiasCorrection/YF_PondAirTemp_mean.csv")
+YF_airport <- YF_airport %>% select(-X)  # Remove unnecessary column 'X'
+
+```
+
+Check dates
+
+```{r}
+# Fix 'date' in YF_85 to ensure it's in Date format
+YF_85$date <- as.Date(paste("01", YF_85$date), format = "%d %b %Y")
+
+# Ensure that there are no NAs in the 'date' column after conversion
+sum(is.na(YF_85$date))  # Check if there are any missing values (should be 0)
+
+```
+
+Trim dates
+
+```{r}
+# Trim YF_85 to the date range of YF_airport
+start_date <- min(YF_airport$Date)
+end_date <- max(YF_airport$Date)
+
+# Subset YF_85 to match the date range of YF_airport
+YF_85_trimmed <- YF_85 %>%
+  filter(date >= start_date & date <= end_date)
+
+```
+
+Plot pre-correction data
+
+```{r}
+library(ggplot2)
+
+# Ensure 'Date' in YF_airport is in Date format
+YF_airport$Date <- as.Date(YF_airport$Date)
+
+# Check structure of YF_85_trimmed to confirm correct Date column
+str(YF_85_trimmed)
+
+# Plot Observed vs Uncorrected Predicted Temperatures
+Plot <- ggplot() +
+  geom_line(data = YF_85_trimmed, aes(x = date, y = avg_temperature, color = "Predicted (Uncorrected)"), size = 1.2) +
+  geom_line(data = YF_airport, aes(x = Date, y = Air_MonthAvg, color = "Observed"), size = 1.2) +
+  labs(
+    title = "Observed vs Uncorrected Predicted Temperatures - YF RCP 8.5",
+    x = "Date",
+    y = "Temperature (°C)",
+    color = "Temperature Type"
+  ) +
+  scale_x_date(
+    date_labels = "%b %Y",    # Format x-axis as Month-Year
+    date_breaks = "1 month",  # Set breaks every month
+    expand = c(0, 0)          # Remove extra space at the edges
+  ) +
+  scale_color_manual(values = c("Predicted (Uncorrected)" = "red", "Observed" = "black")) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 85, hjust = 1),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+Plot
+
+ggsave("BiasCorrection/Geo_BiasCorrection/Plots/Pre-CorrectionComparison_YF85.jpeg", plot = Plot, width = 8, height = 6)
+
+```
+
+z-score bias correction
+
+```{r}
+# Calculate mean and standard deviation for observed and predicted temperatures
+mu_obs <- mean(YF_airport$Air_MonthAvg, na.rm = TRUE)
+sigma_obs <- sd(YF_airport$Air_MonthAvg, na.rm = TRUE)
+
+mu_pred <- mean(YF_85_trimmed$avg_temperature, na.rm = TRUE)
+sigma_pred <- sd(YF_85_trimmed$avg_temperature, na.rm = TRUE)
+
+```
+
+Correction applied to the 2012-2020 dataset
+
+```{r}
+# Apply the z-score bias correction to the predicted data
+YF_85_trimmed$corrected_temp <- (YF_85_trimmed$avg_temperature - mu_pred) / sigma_pred * sigma_obs + mu_obs
+
+# Check the first few rows to verify
+head(YF_85_trimmed)
+
+```
+
+Plot corrected and observed values
+
+```{r}
+# Plotting Observed vs Corrected Predicted Temperatures
+Plot <- ggplot() +
+  geom_line(data = YF_85_trimmed, aes(x = date, y = corrected_temp, color = "Predicted (Corrected)"), size = 1.2, linetype = "dashed") +
+  geom_line(data = YF_airport, aes(x = Date, y = Air_MonthAvg, color = "Observed"), size = 1.2) +
+  labs(
+    title = "Observed vs Corrected Predicted Temperatures - YF RCP 8.5",
+    x = "Date",
+    y = "Temperature (°C)",
+    color = "Temperature Type"
+  ) +
+  scale_x_date(
+    date_labels = "%b %Y",    # Format x-axis as Month-Year
+    date_breaks = "1 month",  # Set breaks every month
+    expand = c(0, 0)          # Remove extra space at the edges
+  ) +
+  scale_color_manual(values = c("Predicted (Corrected)" = "blue", "Observed" = "black")) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 85, hjust = 1),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic"),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+Plot
+
+ggsave("BiasCorrection/Geo_BiasCorrection/Plots/Corrected_YF85.jpeg", plot = Plot, width = 8, height = 6)
+```
+
+Plotting the values here
+
+```{r}
+# Plot Original vs Corrected Predicted Temperatures (No Observed Values)
+Plot <- ggplot() +
+  # Plot the original predicted temperatures (uncorrected)
+  geom_line(data = YF_85_trimmed, aes(x = date, y = avg_temperature, color = "Predicted (Uncorrected)"), size = 1.2, linetype = "solid") +
+  
+  # Plot the corrected predicted temperatures
+  geom_line(data = YF_85_trimmed, aes(x = date, y = corrected_temp, color = "Predicted (Corrected)"), size = 1.2, linetype = "dashed") +
+  
+  # Set plot labels
+  labs(
+    title = "Original vs Corrected Predicted Temperatures - YF RCP 8.5",
+    x = "Date",
+    y = "Temperature (°C)",
+    color = "Temperature Type"
+  ) +
+  
+  # Customize x-axis to show months/years clearly
+  scale_x_date(
+    date_labels = "%b %Y",    # Format x-axis as Month-Year
+    date_breaks = "1 month",  # Set breaks every month
+    expand = c(0, 0)          # Remove extra space at the edges
+  ) +
+  
+  # Define custom colors for the plot
+  scale_color_manual(values = c("Predicted (Uncorrected)" = "red", "Predicted (Corrected)" = "blue")) +
+  
+  # Minimal theme for the plot
+  theme_minimal() +
+  
+  # Customizations for appearance
+  theme(
+    axis.text.x = element_text(angle = 85, hjust = 1),  # Rotate x-axis labels for clarity
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+Plot
+
+ggsave("BiasCorrection/Geo_BiasCorrection/Plots/CorrectedComparison_YF85.jpeg", plot = Plot, width = 8, height = 6)
+
+```
+Correction applied to the whole dataset
+
+```{r}
+# Apply the z-score bias correction to the predicted data
+YF_85$corrected_temp <- (YF_85$avg_temperature - mu_pred) / sigma_pred * sigma_obs + mu_obs
+
+# Check the first few rows to verify
+head(YF_85)
+```
+
+Plot this to make it into the same predicted (corrected) + predicted (uncorrected) with the error included
+
+```{r}
+# Plot Original vs Corrected Predicted Temperatures (No Observed Values)
+Plot <- ggplot() +
+  # Plot the original predicted temperatures (uncorrected)
+  geom_line(data = YF_85, aes(x = date, y = avg_temperature, color = "Predicted (Uncorrected)"), size = 1.2, linetype = "solid") +
+  
+  # Plot the corrected predicted temperatures
+  geom_line(data = YF_85, aes(x = date, y = corrected_temp, color = "Predicted (Corrected)"), size = 1.2, linetype = "dashed") +
+  
+  geom_line(data = YF_airport, aes(x = Date, y = Air_MonthAvg, color = "Observed"), size = 1.2) +
+  
+  # Set plot labels
+  labs(
+    title = "Original vs Corrected Predicted Temperatures - YF RCP 8.5",
+    x = "Date",
+    y = "Temperature (°C)",
+    color = "Temperature Type"
+  ) +
+  
+  # Customize x-axis to show months/years clearly
+  scale_x_date(
+    date_labels = "%b %Y",    # Format x-axis as Month-Year
+    date_breaks = "1 month",  # Set breaks every month
+    expand = c(0, 0)          # Remove extra space at the edges
+  ) +
+  
+  # Define custom colors for the plot
+  scale_color_manual(values = c("Predicted (Uncorrected)" = "red", "Predicted (Corrected)" = "blue")) +
+  
+  # Minimal theme for the plot
+  theme_minimal() +
+  
+  # Customizations for appearance
+  theme(
+    axis.text.x = element_text(angle = 85, hjust = 1),  # Rotate x-axis labels for clarity
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+Plot
+
+ggsave("BiasCorrection/Geo_BiasCorrection/Plots/FullCorrection_YF85.jpeg", plot = Plot, width = 8, height = 6)
+```
+
+
+Save the new file
+
+```{r}
+# Save the updated dataset with the corrected temperatures to a new CSV file
+write.csv(YF_85, "BiasCorrection/Geo_BiasCorrection/DataFiles/SNAP_YF85_corrected.csv", row.names = FALSE)
+
+```
+

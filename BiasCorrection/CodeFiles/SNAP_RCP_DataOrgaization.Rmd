@@ -1,0 +1,550 @@
+---
+title: "SNAP_RCP_DataExtractionOrganization"
+author: "Amaryllis Adey"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Setting up the workspace
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+setwd("~/Library/CloudStorage/Dropbox/SWEL/CopperRiverDelta/PondTemps/DataAnalysis/PondTempsAnalysis")
+```
+
+# Changing this to be reading in the bias corrected forecast data instead
+
+## Read in the data
+
+```{r}
+SNAP_CR_45 <- read.csv("BiasCorrection/Geo_BiasCorrection/DataFiles/SNAP_CR45_corrected_monthly.csv")
+SNAP_CR_45$date <- as.Date(SNAP_CR_45$date,format="%Y-%m-%d")
+SNAP_CR_45
+SNAP_CR_85 <- read.csv("BiasCorrection/Geo_BiasCorrection/DataFiles/SNAP_CR85_corrected_monthly.csv")
+SNAP_CR_85$date <- as.Date(SNAP_CR_85$date,format="%Y-%m-%d")
+SNAP_CR_85
+
+SNAP_YF_45 <- read.csv("BiasCorrection/Geo_BiasCorrection/DataFiles/SNAP_YF45_corrected_monthly.csv")
+SNAP_YF_45$date <- as.Date(SNAP_YF_45$date,format="%Y-%m-%d")
+SNAP_YF_45
+SNAP_YF_85 <- read.csv("BiasCorrection/Geo_BiasCorrection/DataFiles/SNAP_YF85_corrected_monthly.csv")
+SNAP_YF_85$date <- as.Date(SNAP_YF_85$date,format="%Y-%m-%d")
+SNAP_YF_85
+```
+
+# Appending the Temperature Forecasts to the observed data
+
+## Starting with RCP 4.5
+
+### Creating a dataframe with missing values for all other aspects
+
+Determining the columns needed for this
+
+```{r}
+CR_ObsData <- read.csv("BiasCorrection/CR_PondAirTemp_mean.csv", header=TRUE)
+head(CR_ObsData)
+
+# remove the first column here and change the column for Date to date
+  # Date is a function of some sort so could be the source of errors
+CR_ObsData <- CR_ObsData %>%
+  dplyr::rename(date=Date)
+CR_ObsData <- CR_ObsData[,-1]
+head(CR_ObsData)
+
+CR_ObsData <- CR_ObsData %>%
+  dplyr::select(date, Airport, Air_MonthAvg, std, precision, Region, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD)
+CR_ObsData
+
+CR_ObsData$date <- as.Date(CR_ObsData$date,format="%Y-%m-%d")
+CR_ObsData
+```
+
+Columns needed are date, Airport, Air_MonthAvg, Air_MonthMax, Air_MonthMin, Region, TIN, SQR, TIS, CAB, EYS, RHM, BVS, CAN, WDD
+
+#### Copper River Delta
+
+Checking the dimensions of the dataframe
+
+```{r}
+SNAP_CR_45
+dim(SNAP_CR_45) # 972 rows here, so need to make 972 blank rows
+```
+
+Checking the observational data
+
+```{r}
+CR_ObsData <- read.csv("BiasCorrection/CR_PondAirTemp_mean.csv", header=TRUE)
+head(CR_ObsData)
+
+# remove the first column here and change the column for Date to date
+  # Date is a function of some sort so could be the source of errors
+CR_ObsData <- CR_ObsData %>%
+  dplyr::rename(date=Date)
+CR_ObsData <- CR_ObsData[,-1]
+head(CR_ObsData)
+
+CR_ObsData <- CR_ObsData %>%
+  dplyr::select(date, Airport, Air_MonthAvg, std, precision, Region, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD)
+CR_ObsData
+
+
+CR_ObsData$date <- as.Date(CR_ObsData$date,format="%Y-%m-%d")
+CR_ObsData
+```
+
+Creating an empty dataframe
+
+```{r}
+CR_df <- CR_ObsData[0,]
+str(CR_df)
+
+attr(CR_df, 'row.names') <- 1:nrow(SNAP_CR_45)
+
+str(CR_df)
+```
+
+#### Yakutat Forelands
+
+Checking the dimensions of the dataframe
+
+```{r}
+SNAP_YF_45
+dim(SNAP_YF_45) # 972 rows here, so need to make 972 blank rows
+```
+
+Checking the observational data
+
+```{r}
+YF_ObsData <- read.csv("BiasCorrection/YF_PondAirTemp_mean.csv", header=TRUE)
+head(YF_ObsData)
+
+# remove the first column here and change the column for Date to date
+  # Date is a function of some sort so could be the source of errors
+YF_ObsData <- YF_ObsData %>%
+  dplyr::rename(date=Date)
+YF_ObsData <- YF_ObsData[,-1]
+head(YF_ObsData)
+
+YF_ObsData <- YF_ObsData %>%
+  dplyr::select(date, Airport, Air_MonthAvg, std, precision, Region,  MP1, MP3, PL3, PL2, UBP3, MP5, MP8, UBP1, UBP2, PL1, UBP4)
+YF_ObsData
+
+
+YF_ObsData$date <- as.Date(YF_ObsData$date,format="%Y-%m-%d")
+YF_ObsData
+```
+
+Creating an empty dataframe
+
+```{r}
+YF_df <- YF_ObsData[0,]
+str(YF_df)
+
+attr(YF_df, 'row.names') <- 1:nrow(SNAP_YF_45)
+
+str(YF_df)
+```
+
+### Adding in the data where it is available
+
+#### Copper River Delta
+
+```{r}
+CR_df
+
+#values where there is data
+CR_df$date <- SNAP_CR_45$date
+CR_df$Air_MonthAvg <- SNAP_CR_45$avg_temperature
+CR_df$std <- SNAP_CR_45$std_temperature
+CR_df$precision <- SNAP_CR_45$precision
+CR_df$Region <- rep("CR", nrow(CR_df))
+
+#values where there is not data
+CR_df$Airport <- rep(NA, nrow(CR_df))
+CR_df$BVS <- rep(NA, nrow(CR_df))
+CR_df$CAB <- rep(NA, nrow(CR_df))
+CR_df$CAN <- rep(NA, nrow(CR_df))
+CR_df$EYS <- rep(NA, nrow(CR_df))
+CR_df$RHM <- rep(NA, nrow(CR_df))
+CR_df$SQR <- rep(NA, nrow(CR_df))
+CR_df$TIN <- rep(NA, nrow(CR_df))
+CR_df$TIS <- rep(NA, nrow(CR_df))
+CR_df$WDD <- rep(NA, nrow(CR_df))
+
+str(CR_df)
+```
+
+Appending this new dataframe "df" to the CR_ObsData dataframe
+
+```{r}
+library(zoo)  # For as.yearmon function if needed
+
+# Convert CR_df$date to Date format
+CR_df$date <- as.Date(as.yearmon(CR_df$date))
+
+# Convert CR_ObsData$date to Date format if not already done
+CR_ObsData$date <- as.Date(CR_ObsData$date)
+
+# Combine the dataframes
+CR_45Forecast <- rbind(CR_ObsData, CR_df)
+
+# Check the structure of the combined dataframe
+str(CR_45Forecast)
+
+#save this as a .csv file
+write.csv(CR_45Forecast, file = "CR_45SNAPForecast_MonCorr.csv")
+
+```
+
+#### Yakutat Forelands
+
+Adding in the data where it is available
+
+```{r}
+#values where there is data
+YF_df$date <- SNAP_YF_45$date
+YF_df$Air_MonthAvg <- SNAP_YF_45$avg_temperature
+YF_df$std <- SNAP_YF_45$std_temperature
+YF_df$precision <- SNAP_YF_45$precision
+YF_df$Region <- rep("YF", nrow(YF_df))
+
+#values where there is not data
+YF_df$Airport <- rep(NA, nrow(YF_df))
+YF_df$MP1<- rep(NA, nrow(YF_df))
+YF_df$MP3 <- rep(NA, nrow(YF_df))
+YF_df$MP5 <- rep(NA, nrow(YF_df))
+YF_df$MP8 <- rep(NA, nrow(YF_df))
+YF_df$PL1 <- rep(NA, nrow(YF_df))
+YF_df$PL2 <- rep(NA, nrow(YF_df))
+YF_df$PL3 <- rep(NA, nrow(YF_df))
+YF_df$UBP1 <- rep(NA, nrow(YF_df))
+YF_df$UBP2 <- rep(NA, nrow(YF_df))
+YF_df$UBP3 <- rep(NA, nrow(YF_df))
+YF_df$UBP4 <- rep(NA, nrow(YF_df))
+
+str(YF_df)
+```
+
+Appending this new dataframe "df" to the CR_ObsData dataframe
+
+```{r}
+library(zoo)  # For as.yearmon function if needed
+
+# Convert CR_df$date to Date format
+YF_df$date <- as.Date(as.yearmon(YF_df$date))
+
+# Convert CR_ObsData$date to Date format if not already done
+YF_ObsData$date <- as.Date(YF_ObsData$date)
+
+# Combine the dataframes
+YF_45Forecast <- rbind(YF_ObsData, YF_df)
+
+# Check the structure of the combined dataframe
+str(YF_45Forecast)
+
+#save this as a .csv file
+write.csv(YF_45Forecast, file = "YF_45SNAPForecast_MonCorr.csv")
+
+```
+
+## Continuing with RCP 8.5
+
+### Creating a dataframe with missing values for all other aspects
+
+Determining the columns needed for this
+
+```{r}
+CR_ObsData <- read.csv("BiasCorrection/CR_PondAirTemp_mean.csv", header=TRUE)
+head(CR_ObsData)
+
+# remove the first column here and change the column for Date to date
+  # Date is a function of some sort so could be the source of errors
+CR_ObsData <- CR_ObsData %>%
+  dplyr::rename(date=Date)
+CR_ObsData <- CR_ObsData[,-1]
+head(CR_ObsData)
+
+CR_ObsData <- CR_ObsData %>%
+  select(date, Airport, Air_MonthAvg, std, precision, Region, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD)
+CR_ObsData
+
+
+CR_ObsData$date <- as.Date(CR_ObsData$date,format="%Y-%m-%d")
+CR_ObsData
+```
+
+Columns needed are date, Airport, Air_MonthAvg, Air_MonthMax, Air_MonthMin, Region, TIN, SQR, TIS, CAB, EYS, RHM, BVS, CAN, WDD
+
+#### Copper River Delta
+
+Checking the dimensions of the dataframe
+
+```{r}
+SNAP_CR_85
+dim(SNAP_CR_85) # 972 rows here, so need to make 972 blank rows
+```
+
+Checking the observational data
+
+```{r}
+CR_ObsData <- read.csv("BiasCorrection/CR_PondAirTemp_mean.csv", header=TRUE)
+head(CR_ObsData)
+
+# remove the first column here and change the column for Date to date
+  # Date is a function of some sort so could be the source of errors
+CR_ObsData <- CR_ObsData %>%
+  dplyr::rename(date=Date)
+CR_ObsData <- CR_ObsData[,-1]
+head(CR_ObsData)
+
+CR_ObsData <- CR_ObsData %>%
+  select(date, Airport, Air_MonthAvg, std, precision, Region, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD)
+CR_ObsData
+
+CR_ObsData$date <- as.Date(CR_ObsData$date,format="%Y-%m-%d")
+CR_ObsData
+```
+
+Creating an empty dataframe
+
+```{r}
+CR_df <- CR_ObsData[0,]
+str(CR_df)
+
+attr(CR_df, 'row.names') <- 1:nrow(SNAP_CR_85)
+
+str(CR_df)
+```
+
+#### Yakutat Forelands
+
+Checking the dimensions of the dataframe
+
+```{r}
+SNAP_YF_85
+dim(SNAP_YF_85) # 972 rows here, so need to make 972 blank rows
+```
+
+Checking the observational data
+
+```{r}
+YF_ObsData <- read.csv("BiasCorrection/YF_PondAirTemp_mean.csv", header=TRUE)
+head(YF_ObsData)
+
+# remove the first column here and change the column for Date to date
+  # Date is a function of some sort so could be the source of errors
+YF_ObsData <- YF_ObsData %>%
+  dplyr::rename(date=Date)
+YF_ObsData <- YF_ObsData[,-1]
+head(YF_ObsData)
+
+YF_ObsData <- YF_ObsData %>%
+  select(date, Airport, Air_MonthAvg, std, precision, Region,  MP1, MP3, PL3, PL2, UBP3, MP5, MP8, UBP1, UBP2, PL1, UBP4)
+YF_ObsData
+
+YF_ObsData$date <- as.Date(YF_ObsData$date,format="%Y-%m-%d")
+YF_ObsData
+```
+
+Creating an empty dataframe
+
+```{r}
+YF_df <- YF_ObsData[0,]
+str(YF_df)
+
+attr(YF_df, 'row.names') <- 1:nrow(SNAP_YF_85)
+
+str(YF_df)
+```
+
+### Adding in the data where it is available
+
+#### Copper River Delta
+
+```{r}
+CR_df
+
+#values where there is data
+CR_df$date <- SNAP_CR_85$date
+CR_df$Air_MonthAvg <- SNAP_CR_85$avg_temperature
+CR_df$std <- SNAP_CR_85$std_temperature
+CR_df$precision <- SNAP_CR_85$precision
+CR_df$Region <- rep("CR", nrow(CR_df))
+
+#values where there is not data
+CR_df$Airport <- rep(NA, nrow(CR_df))
+CR_df$BVS <- rep(NA, nrow(CR_df))
+CR_df$CAB <- rep(NA, nrow(CR_df))
+CR_df$CAN <- rep(NA, nrow(CR_df))
+CR_df$EYS <- rep(NA, nrow(CR_df))
+CR_df$RHM <- rep(NA, nrow(CR_df))
+CR_df$SQR <- rep(NA, nrow(CR_df))
+CR_df$TIN <- rep(NA, nrow(CR_df))
+CR_df$TIS <- rep(NA, nrow(CR_df))
+CR_df$WDD <- rep(NA, nrow(CR_df))
+
+str(CR_df)
+```
+
+Appending this new dataframe "df" to the CR_ObsData dataframe
+
+```{r}
+library(zoo)  # For as.yearmon function if needed
+
+# Convert CR_df$date to Date format
+CR_df$date <- as.Date(as.yearmon(CR_df$date))
+
+# Convert CR_ObsData$date to Date format if not already done
+CR_ObsData$date <- as.Date(CR_ObsData$date)
+
+# Combine the dataframes
+CR_85Forecast <- rbind(CR_ObsData, CR_df)
+
+# Check the structure of the combined dataframe
+str(CR_85Forecast)
+
+#save this as a .csv file
+write.csv(CR_85Forecast, file = "CR_85SNAPForecast_MonCorr.csv")
+
+```
+
+#### Yakutat Forelands
+
+Adding in the data where it is available
+
+```{r}
+YF_df
+
+#values where there is data
+YF_df$date <- SNAP_YF_85$date
+YF_df$Air_MonthAvg <- SNAP_YF_85$avg_temperature
+YF_df$std <- SNAP_YF_85$std_temperature
+YF_df$precision <- SNAP_YF_85$precision
+YF_df$Region <- rep("YF", nrow(YF_df))
+
+#values where there is not data
+YF_df$Airport <- rep(NA, nrow(YF_df))
+YF_df$MP1<- rep(NA, nrow(YF_df))
+YF_df$MP3 <- rep(NA, nrow(YF_df))
+YF_df$MP5 <- rep(NA, nrow(YF_df))
+YF_df$MP8 <- rep(NA, nrow(YF_df))
+YF_df$PL1 <- rep(NA, nrow(YF_df))
+YF_df$PL2 <- rep(NA, nrow(YF_df))
+YF_df$PL3 <- rep(NA, nrow(YF_df))
+YF_df$UBP1 <- rep(NA, nrow(YF_df))
+YF_df$UBP2 <- rep(NA, nrow(YF_df))
+YF_df$UBP3 <- rep(NA, nrow(YF_df))
+YF_df$UBP4 <- rep(NA, nrow(YF_df))
+
+str(YF_df)
+```
+
+Appending this new dataframe "df" to the CR_ObsData dataframe
+
+```{r}
+library(zoo)  # For as.yearmon function if needed
+
+# Convert CR_df$date to Date format
+YF_df$date <- as.Date(as.yearmon(YF_df$date))
+
+# Convert CR_ObsData$date to Date format if not already done
+YF_ObsData$date <- as.Date(YF_ObsData$date)
+
+# Combine the dataframes
+YF_85Forecast <- rbind(YF_ObsData, YF_df)
+
+# Check the structure of the combined dataframe
+str(YF_85Forecast)
+
+#save this as a .csv file
+write.csv(YF_85Forecast, file = "YF_85SNAPForecast_MonCorr.csv")
+
+```
+
+# Attemping a quick plot of this data for both CR and YF
+
+## RCP 4.5
+
+### Copper River Delta
+
+```{r}
+CR_45Forecast 
+
+CR_45Temps <- ggplot(data = CR_45Forecast, aes(x = date)) +
+  geom_line(aes(y = Air_MonthAvg)) +  # Line plot for average temperature
+  geom_ribbon(aes(ymin = Air_MonthAvg - std, ymax = Air_MonthAvg + std),  # Ribbon for uncertainty
+              alpha = 0.5, fill = "blue") +
+  xlab("Year") +
+  ylab("Mean Temperature (C)") +
+  ggtitle("Copper River Delta Temperature - RCP 4.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+CR_45Temps
+
+ggsave("CR_45Temps.jpeg", plot = CR_45Temps, width = 8, height = 6)
+```
+
+### Yakutat Forelands
+
+```{r}
+YF_45Forecast 
+
+YF_45Temps<- ggplot(data = YF_45Forecast, mapping = aes(x = date)) +
+  geom_line(mapping = aes(y = Air_MonthAvg)) +
+   geom_ribbon(aes(ymin = Air_MonthAvg - std, ymax = Air_MonthAvg + std),  # Ribbon for uncertainty
+              alpha = 0.5, fill = "blue") +
+  xlab("Year") +
+  ylab("Mean Temperature (C)") +
+  ggtitle("Yakutat Forelands Temperature - RCP 4.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+YF_45Temps
+
+ggsave("YF_45Temps.jpeg", plot = YF_45Temps, width = 8, height = 6)
+```
+
+## RCP 8.5
+
+### Copper River Delta
+
+```{r}
+CR_85Forecast 
+
+CR_85Temps<- ggplot(data = CR_85Forecast, mapping = aes(x = date)) +
+  geom_line(mapping = aes(y = Air_MonthAvg)) +
+   geom_ribbon(aes(ymin = Air_MonthAvg - std, ymax = Air_MonthAvg + std),  # Ribbon for uncertainty
+              alpha = 0.5, fill = "blue") +
+  xlab("Year") +
+  ylab("Mean Temperature (C)") +
+  ggtitle("Copper River Delta Temperature - RCP 8.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+CR_85Temps
+
+ggsave("CR_85Temps.jpeg", plot = CR_85Temps, width = 8, height = 6)
+```
+
+### Yakutat Forelands
+
+```{r}
+YF_85Forecast 
+
+YF_85Temps<- ggplot(data = YF_85Forecast, mapping = aes(x = date)) +
+  geom_line(mapping = aes(y = Air_MonthAvg)) +
+   geom_ribbon(aes(ymin = Air_MonthAvg - std, ymax = Air_MonthAvg + std),  # Ribbon for uncertainty
+              alpha = 0.5, fill = "blue") +
+  xlab("Year") +
+  ylab("Mean Temperature (C)") +
+  ggtitle("Yakutat Forelands Temperature - RCP 8.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+YF_85Temps
+
+ggsave("YF_85Temps.jpeg", plot = YF_85Temps, width = 8, height = 6)
+```
