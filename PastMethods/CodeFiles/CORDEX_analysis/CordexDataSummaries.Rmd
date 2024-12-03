@@ -1,0 +1,796 @@
+---
+title: "CORDEX Data Summaries"
+author: "Amaryllis Adey"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("/Users/amaryllisadey/Dropbox/SWEL/CopperRiverDelta/PondTemps/DataAnalysis/PondTempsAnalysis_GIT/")
+```
+
+```{r}
+#Packages
+library(dplyr)
+library(ggpubr)
+library(ggsci)
+library(Rcpp)
+library(reshape)
+library(lubridate)
+library(naniar)
+library(gtools)
+library(tidyr)
+library(ncdf4)
+library(raster)
+library(sf)
+library(tidync)
+library(dplyr)
+library(datetime)
+```
+
+Working with RCP 4.5 data
+
+```{r}
+#Read in all of the RCP 4.5 data
+RCP45 <- tidync("/Users/amaryllisadey/Dropbox/SWEL/CopperRiverDelta/PondTemps/DataAnalysis/PondTempsAnalysis_GITNew/DataFiles/CORDEX/RCP_4.5/t_CORDEX-NAM_rcp45_mon_200601-210012.nc")
+
+#Filter the data to the CRD
+test <- RCP45
+
+# Tell R what the target values are
+CRD_target_lat <- 60.5437
+CRD_target_lon <- 145.7260
+
+# Filter this to the Lat Long
+test_filtered <- test %>%
+  hyper_filter(lat = between(abs(lat), CRD_target_lat-0.25, CRD_target_lat+0.25), 
+               lon = between(abs(lon), CRD_target_lon-0.25, CRD_target_lon+0.25)) %>%
+  hyper_tibble()
+
+print(test_filtered)
+
+CRD_45 <- test_filtered
+rm(test_filtered)
+
+# Attemp to change the cordex time
+test <- CRD_45 %>%
+  group_by(time) %>%
+  summarize(avgTemp = mean(t), stdTemp = sd(t)) %>%
+  ungroup() %>%
+  mutate(date_time = as.Date(time)) 
+test2 <- test %>%
+  mutate(date_time = date_time %m-%years(120)) %>%
+  ungroup() %>%
+  dplyr::select(date_time, avgTemp, stdTemp)
+
+CRD_45 <- test2
+
+rm(test, test2)
+
+CRD_45 <- data.frame(CRD_45)
+
+#Filter the data to the YF
+test <- RCP45
+
+# Tell R what the target values are
+YF_target_lat <- 59.5089
+YF_target_lon <- 139.6599
+
+# Filter this to Lat Long
+test_filtered <- test %>%
+  hyper_filter(lat = between(abs(lat), YF_target_lat-0.25, YF_target_lat+0.25), 
+               lon = between(abs(lon), YF_target_lon-0.25, YF_target_lon+0.25)) %>%
+  hyper_tibble()
+
+print(test_filtered)
+
+YF_45 <- test_filtered
+rm(test_filtered)
+
+# Attemp to change the cordex time
+test <- YF_45 %>%
+  group_by(time) %>%
+  summarize(avgTemp = mean(t), stdTemp = sd(t)) %>%
+  ungroup() %>%
+  mutate(date_time = as.Date(time)) 
+test2 <- test %>%
+  mutate(date_time = date_time %m-%years(120)) %>%
+  ungroup() %>%
+  dplyr::select(date_time, avgTemp, stdTemp)
+
+YF_45 <- test2
+
+rm(test, test2)
+
+YF_45 <- data.frame(YF_45)
+
+```
+
+Working with RCP 8.5 data
+
+```{r}
+#Read in all of the RCP 8.5 data
+RCP85 <- tidync("/Users/amaryllisadey/Dropbox/SWEL/CopperRiverDelta/PondTemps/DataAnalysis/PondTempsAnalysis_GITNew/DataFiles/CORDEX/RCP_8.5/t_CORDEX-NAM_rcp45_mon_200601-210012.nc")
+
+#Filter the data to the CRD
+test <- RCP85
+
+# Tell R what the target values are
+CRD_target_lat <- 60.5437
+CRD_target_lon <- 145.7260
+
+# Filter this to the Lat Long
+test_filtered <- test %>%
+  hyper_filter(lat = between(abs(lat), CRD_target_lat-0.25, CRD_target_lat+0.25), 
+               lon = between(abs(lon), CRD_target_lon-0.25, CRD_target_lon+0.25)) %>%
+  hyper_tibble()
+
+print(test_filtered)
+
+CRD_85 <- test_filtered
+rm(test_filtered)
+
+data.frame(CRD_85)
+
+# Attemp to change the cordex time
+test <- CRD_85 %>%
+  group_by(time) %>%
+  summarize(avgTemp = mean(t), stdTemp = sd(t)) %>%
+  ungroup() %>%
+  mutate(date_time = as.Date(time)) 
+test2 <- test %>%
+  mutate(date_time = date_time %m-%years(120)) %>%
+  ungroup() %>%
+  dplyr::select(date_time, avgTemp, stdTemp)
+
+CRD_85 <- test2
+
+rm(test, test2)
+
+CRD_85 <- data.frame(CRD_85)
+
+#Filter the data to the YF
+test <- RCP85
+
+# Tell R what the target values are
+YF_target_lat <- 59.5089
+YF_target_lon <- 139.6599
+
+# Filter this to Lat Long
+test_filtered <- test %>%
+  hyper_filter(lat = between(abs(lat), YF_target_lat-0.25, YF_target_lat+0.25), 
+               lon = between(abs(lon), YF_target_lon-0.25, YF_target_lon+0.25)) %>%
+  hyper_tibble()
+
+print(test_filtered)
+
+YF_85 <- test_filtered
+rm(test_filtered)
+
+# Attemp to change the cordex time
+test <- YF_85 %>%
+  group_by(time) %>%
+  summarize(avgTemp = mean(t), stdTemp = sd(t)) %>%
+  ungroup() %>%
+  mutate(date_time = as.Date(time)) 
+test2 <- test %>%
+  mutate(date_time = date_time %m-% years(120)) %>%
+  dplyr::select(date_time, avgTemp, stdTemp)
+
+YF_85 <- test2
+
+rm(test, test2)
+
+YF_85 <- data.frame(YF_85)
+
+```
+
+Saving the files as .csv files that can be loaded into other code
+
+```{r}
+write.csv(CRD_45, "CORDEX_CRD_45.csv")
+write.csv(CRD_85, "CORDEX_CRD_85.csv")
+
+write.csv(YF_45, "CORDEX_YF_45.csv")
+write.csv(YF_85, "CORDEX_YF_85.csv")
+
+```
+
+### Plot the forecasted data
+
+#### Copper River Delta
+
+```{r}
+CRD_45
+
+# Full time frame (2006-2100)
+CRD_CORDEX <- ggplot(data = CRD_45, mapping = aes(x = date_time)) +
+  geom_line(aes(y = avgTemp), linewidth = 0.2) +
+  geom_ribbon(aes(ymax = (avgTemp + stdTemp), ymin = (avgTemp - stdTemp)))+
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Copper River CORDEX Forecast - RCP 4.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+CRD_CORDEX
+
+ggsave("CRD_CORDEX_Forecast45.jpeg", plot = CRD_CORDEX, width = 8, height = 6)
+
+# Limited time frame (2020-2100)
+test <- CRD_45 %>%
+  filter(date_time > "2019-12-01")
+
+CRD_45 <- test
+
+CRD_CORDEX <- ggplot(data = CRD_45, mapping = aes(x = date_time)) +
+  geom_line(aes(y = avgTemp), linewidth = 0.2) +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Copper River CORDEX Forecast - RCP 4.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+CRD_CORDEX
+
+ggsave("CRD_CORDEX_Forecast4.5_2020.jpeg", plot = CRD_CORDEX, width = 8, height = 6)
+```
+
+#### Yakutat Forelands
+
+```{r}
+YF_45
+
+# Full time frame (2006-2100)
+YF_CORDEX <- ggplot(data = YF_45, mapping = aes(x = date_time)) +
+  geom_line(aes(y = avgTemp), linewidth = 0.2) +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Yakutat Forelands CORDEX Forecast - RCP 4.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+YF_CORDEX
+
+ggsave("/YF_CORDEX_Forecast45.jpeg", plot = YF_CORDEX, width = 8, height = 6)
+
+# Limited time frame (2020-2100)
+test <- YF_45 %>%
+  filter(date_time > "2019-12-01")
+
+YF_45 <- test
+
+YF_CORDEX <- ggplot(data = YF_45, mapping = aes(x = date_time)) +
+  geom_line(aes(y = avgTemp), linewidth = 0.2) +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Yakutat Forelands CORDEX Forecast - RCP 4.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+YF_CORDEX
+
+ggsave("YF_CORDEX_Forecast4.5_2020.jpeg", plot = YF_CORDEX, width = 8, height = 6)
+```
+
+### Plot the forecasted data
+
+#### Copper River Delta
+
+```{r}
+CRD_85
+
+# Full time frame (2006-2100)
+CRD_CORDEX <- ggplot(data = CRD_85, mapping = aes(x = date_time)) +
+  geom_line(aes(y = avgTemp), linewidth = 0.2) +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Copper River CORDEX Forecast - RCP 8.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+CRD_CORDEX
+
+ggsave("CRD_CORDEX_Forecast85.jpeg", plot = CRD_CORDEX, width = 8, height = 6)
+
+# Limited time frame (2020-2100)
+test <- CRD_85 %>%
+  filter(date_time > "2019-12-01")
+
+CRD_85 <- test
+
+CRD_CORDEX <- ggplot(data = CRD_85, mapping = aes(x = date_time)) +
+  geom_line(aes(y = avgTemp), linewidth = 0.2) +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Copper River CORDEX Forecast - RCP 8.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+CRD_CORDEX
+
+ggsave("CRD_CORDEX_Forecast85_2020.jpeg", plot = CRD_CORDEX, width = 8, height = 6)
+```
+
+#### Yakutat Forelands
+
+```{r}
+YF_85
+
+# Full time frame (2006-2100)
+YF_CORDEX <- ggplot(data = YF_85, mapping = aes(x = date_time)) +
+  geom_line(aes(y = avgTemp), linewidth = 0.2) +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Yakutat Forelands CORDEX Forecast - RCP 8.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+YF_CORDEX
+
+ggsave("YF_CORDEX_Forecast85.jpeg", plot = YF_CORDEX, width = 8, height = 6)
+
+# Limited time frame (2020-2100)
+test <- YF_85 %>%
+  filter(date_time > "2019-12-01")
+
+YF_85 <- test
+
+YF_CORDEX <- ggplot(data = YF_85, mapping = aes(x = date_time)) +
+  geom_line(aes(y = avgTemp), linewidth = 0.2) +
+  xlab("Year") +
+  ylab("Mean Forecast Temperature") +
+  ggtitle("Yakutat Forelands CORDEX Forecast - RCP 8.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+YF_CORDEX
+
+ggsave("YF_CORDEX_Forecast85_2020.jpeg", plot = YF_CORDEX, width = 8, height = 6)
+```
+
+# Appending the Temperature Forecasts to the observed data
+
+## Starting with RCP 4.5
+
+### Creating a dataframe with missing values for all other aspects
+
+Determining the columns needed for this
+
+```{r}
+CRD_ObsData <- read.csv("CR_PondAirTemp_mean.csv", header=TRUE)
+head(CRD_ObsData)
+
+CRD_ObsData <- data.frame(CRD_ObsData)
+
+# remove the first column here and change the column for Date to date
+  # Date is a function of some sort so could be the source of errors
+CRD_ObsData <- CRD_ObsData %>%
+  dplyr::rename(date=Date)
+CRD_ObsData <- CRD_ObsData[,-1]
+head(CRD_ObsData)
+
+CRD_ObsData <- CRD_ObsData %>%
+  dplyr::select(date, Airport, Air_MonthAvg, std, precision, Region, BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD)
+CRD_ObsData
+```
+
+Columns needed are date, Airport, Air_MonthAvg, Air_MonthMax, Air_MonthMin, Region, TIN, SQR, TIS, CAB, EYS, RHM, BVS, CAN, WDD
+
+#### Copper River Delta
+
+Checking the dimensions of the dataframe
+
+```{r}
+CRD_45
+dim(CRD_45) # 972 rows here, so need to make 972 blank rows
+str(CRD_45)
+
+CRD_45$precision <- 1/((CRD_45$stdTemp)^2)
+
+```
+
+Creating an empty dataframe
+
+```{r}
+CRD_df <- CRD_ObsData[0,]
+str(CRD_df)
+
+attr(CRD_df, 'row.names') <- 1:nrow(CRD_45)
+
+str(CRD_df)
+```
+
+#### Yakutat Forelands
+
+Checking the dimensions of the dataframe
+
+```{r}
+YF_45
+dim(YF_45) # 972 rows here, so need to make 972 blank rows
+str(YF_45)
+YF_45$precision <- 1/((YF_45$stdTemp)^2)
+```
+
+Checking the observational data
+
+```{r}
+YF_ObsData <- read.csv("DataFiles/YF_PondAirTemp_mean.csv", header=TRUE)
+head(YF_ObsData)
+
+# remove the first column here and change the column for Date to date
+  # Date is a function of some sort so could be the source of errors
+YF_ObsData <- YF_ObsData %>%
+  dplyr::rename(date=Date)
+YF_ObsData <- YF_ObsData[,-1]
+head(YF_ObsData)
+
+YF_ObsData <- YF_ObsData %>%
+  dplyr::select(date, Airport, Air_MonthAvg, std, precision, Region,  MP1, MP3, PL3, PL2, UBP3, MP5, MP8, UBP1, UBP2, PL1, UBP4)
+YF_ObsData
+```
+
+Creating an empty dataframe
+
+```{r}
+YF_df <- YF_ObsData[0,]
+str(YF_df)
+
+attr(YF_df, 'row.names') <- 1:nrow(YF_45)
+
+str(YF_df)
+str(YF_ObsData)
+```
+
+### Adding in the data where it is available
+
+#### Copper River Delta
+
+```{r}
+CRD_df
+
+#values where there is data
+CRD_df$date <- CRD_45$date
+CRD_df$Air_MonthAvg <- CRD_45$avgTemp
+CRD_df$std <- CRD_45$std
+CRD_df$precision <- CRD_45$precision
+CRD_df$Region <- rep("CRD", nrow(CRD_df))
+
+#values where there is not data
+CRD_df$Airport <- rep(NA, nrow(CRD_df))
+CRD_df$BVS <- rep(NA, nrow(CRD_df))
+CRD_df$CAB <- rep(NA, nrow(CRD_df))
+CRD_df$CAN <- rep(NA, nrow(CRD_df))
+CRD_df$EYS <- rep(NA, nrow(CRD_df))
+CRD_df$RHM <- rep(NA, nrow(CRD_df))
+CRD_df$SQR <- rep(NA, nrow(CRD_df))
+CRD_df$TIN <- rep(NA, nrow(CRD_df))
+CRD_df$TIS <- rep(NA, nrow(CRD_df))
+CRD_df$WDD <- rep(NA, nrow(CRD_df))
+
+str(CRD_df)
+```
+
+Appending this new dataframe "df" to the CR_ObsData dataframe
+
+```{r}
+CRD_df$date
+CRD_ObsData$date <- as.Date(CRD_ObsData$date)
+
+CRD_new_df <- rbind(CRD_ObsData, CRD_df)
+
+str(CRD_new_df)
+
+CRD_45Forecast <- CRD_new_df
+CRD_45Forecast
+
+#save this as a .csv file
+write.csv(CRD_45Forecast, file = "CRD_45Forecast.csv")
+
+```
+
+#### Yakutat Forelands
+
+Adding in the data where it is available
+
+```{r}
+
+#values where there is data
+YF_df$date <- YF_45$date
+YF_df$Air_MonthAvg <- YF_45$avgTemp
+YF_df$std <- YF_45$std
+YF_df$precision <- YF_45$precision
+YF_df$Region <- rep("YF", nrow(YF_df))
+
+#values where there is not data
+YF_df$Airport <- rep(NA, nrow(YF_df))
+YF_df$MP1<- rep(NA, nrow(YF_df))
+YF_df$MP3 <- rep(NA, nrow(YF_df))
+YF_df$MP5 <- rep(NA, nrow(YF_df))
+YF_df$MP8 <- rep(NA, nrow(YF_df))
+YF_df$PL1 <- rep(NA, nrow(YF_df))
+YF_df$PL2 <- rep(NA, nrow(YF_df))
+YF_df$PL3 <- rep(NA, nrow(YF_df))
+YF_df$UBP1 <- rep(NA, nrow(YF_df))
+YF_df$UBP2 <- rep(NA, nrow(YF_df))
+YF_df$UBP3 <- rep(NA, nrow(YF_df))
+YF_df$UBP4 <- rep(NA, nrow(YF_df))
+
+str(YF_df)
+```
+
+Appending this new dataframe "df" to the CR_ObsData dataframe
+
+```{r}
+YF_df
+YF_ObsData$date <- as.Date(YF_ObsData$date)
+
+YF_new_df <- rbind(YF_ObsData, YF_df)
+
+str(YF_new_df)
+
+YF_45Forecast <- YF_new_df
+YF_45Forecast
+
+#save this as a .csv file
+write.csv(YF_45Forecast, file = "YF_45Forecast.csv")
+
+```
+
+## Continuing with RCP 8.5
+
+### Creating a dataframe with missing values for all other aspects
+
+Determining the columns needed for this
+
+```{r}
+CRD_ObsData
+```
+
+Columns needed are date, Airport, Air_MonthAvg, Air_MonthMax, Air_MonthMin, Region, TIN, SQR, TIS, CAB, EYS, RHM, BVS, CAN, WDD
+
+#### Copper River Delta
+
+Checking the dimensions of the dataframe
+
+```{r}
+CRD_85
+dim(CRD_85) # 972 rows here, so need to make 972 blank rows
+
+CRD_85$precision <- 1/((CRD_85$stdTemp)^2) 
+```
+
+Checking the observational data
+
+```{r}
+CRD_ObsData
+```
+
+Creating an empty dataframe
+
+```{r}
+CRD_df <- CRD_ObsData[0,]
+str(CRD_df)
+
+attr(CRD_df, 'row.names') <- 1:nrow(CRD_85)
+
+str(CRD_df)
+```
+
+#### Yakutat Forelands
+
+Checking the dimensions of the dataframe
+
+```{r}
+YF_85
+dim(YF_85) # 972 rows here, so need to make 972 blank rows
+
+YF_85$precision <- 1/((YF_85$stdTemp)^2)
+```
+
+Checking the observational data
+
+```{r}
+YF_ObsData
+```
+
+Creating an empty dataframe
+
+```{r}
+YF_df <- YF_ObsData[0,]
+str(YF_df)
+
+attr(YF_df, 'row.names') <- 1:nrow(YF_85)
+
+str(YF_df)
+```
+
+### Adding in the data where it is available
+
+#### Copper River Delta
+
+```{r}
+CRD_df
+
+#values where there is data
+CRD_df$date <- CRD_85$date
+CRD_df$Air_MonthAvg <- CRD_85$avgTemp
+CRD_df$std <- CRD_85$std
+CRD_df$precision <- CRD_85$precision
+CRD_df$Region <- rep("CRD", nrow(CRD_df))
+
+#values where there is not data
+CRD_df$Airport <- rep(NA, nrow(CRD_df))
+CRD_df$BVS <- rep(NA, nrow(CRD_df))
+CRD_df$CAB <- rep(NA, nrow(CRD_df))
+CRD_df$CAN <- rep(NA, nrow(CRD_df))
+CRD_df$EYS <- rep(NA, nrow(CRD_df))
+CRD_df$RHM <- rep(NA, nrow(CRD_df))
+CRD_df$SQR <- rep(NA, nrow(CRD_df))
+CRD_df$TIN <- rep(NA, nrow(CRD_df))
+CRD_df$TIS <- rep(NA, nrow(CRD_df))
+CRD_df$WDD <- rep(NA, nrow(CRD_df))
+
+str(CRD_df)
+```
+
+Appending this new dataframe "df" to the CR_ObsData dataframe
+
+```{r}
+CRD_df
+CRD_ObsData$date <- as.Date(CRD_ObsData$date)
+
+CRD_new_df <- rbind(CRD_ObsData, CRD_df)
+
+str(CRD_new_df)
+
+CRD_85Forecast <- CRD_new_df
+CRD_85
+
+#save this as a .csv file
+write.csv(CRD_85Forecast, file = "CRD_85Forecast.csv")
+
+```
+
+#### Yakutat Forelands
+
+Adding in the data where it is available
+
+```{r}
+
+#values where there is data
+YF_df$date <- YF_85$date
+YF_df$Air_MonthAvg <- YF_85$avgTemp
+YF_df$std <- YF_85$std
+YF_df$precision <- YF_85$precision
+YF_df$Region <- rep("YF", nrow(YF_df))
+
+#values where there is not data
+YF_df$Airport <- rep(NA, nrow(YF_df))
+YF_df$MP1<- rep(NA, nrow(YF_df))
+YF_df$MP3 <- rep(NA, nrow(YF_df))
+YF_df$MP5 <- rep(NA, nrow(YF_df))
+YF_df$MP8 <- rep(NA, nrow(YF_df))
+YF_df$PL1 <- rep(NA, nrow(YF_df))
+YF_df$PL2 <- rep(NA, nrow(YF_df))
+YF_df$PL3 <- rep(NA, nrow(YF_df))
+YF_df$UBP1 <- rep(NA, nrow(YF_df))
+YF_df$UBP2 <- rep(NA, nrow(YF_df))
+YF_df$UBP3 <- rep(NA, nrow(YF_df))
+YF_df$UBP4 <- rep(NA, nrow(YF_df))
+
+str(YF_df)
+```
+
+Appending this new dataframe "df" to the CR_ObsData dataframe
+
+```{r}
+YF_df
+YF_ObsData$date <- as.Date(YF_ObsData$date)
+
+YF_new_df <- rbind(YF_ObsData, YF_df)
+
+str(YF_new_df)
+
+YF_85Forecast <- YF_new_df
+YF_85Forecast
+
+#save this as a .csv file
+write.csv(YF_85Forecast, file = "YF_85Forecast.csv")
+
+```
+
+# Attemping a quick plot of this data for both CR and YF
+
+## RCP 4.5
+
+### Copper River Delta
+
+```{r}
+CRD_45Forecast 
+
+CRD_45Temps<- ggplot(data = CRD_45Forecast, mapping = aes(x = date)) +
+  geom_ribbon(mapping = aes(ymin = (Air_MonthAvg - std), ymax = (Air_MonthAvg + std)), color = "grey") +
+  geom_line(mapping = aes(y = Air_MonthAvg)) +
+  xlab("Year") +
+  ylab("Mean Temperature (C)") +
+  ggtitle("Copper River Delta Temperature - RCP 4.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+CRD_45Temps
+
+ggsave("CRD_45Temps.jpeg", plot = CRD_45Temps, width = 8, height = 6)
+```
+
+### Yakutat Forelands
+
+```{r}
+YF_45Forecast 
+
+YF_45Temps<- ggplot(data = YF_45Forecast, mapping = aes(x = date)) +
+  geom_ribbon(mapping = aes(ymin = (Air_MonthAvg - std), ymax = (Air_MonthAvg + std)), color = "grey") +
+  geom_line(mapping = aes(y = Air_MonthAvg)) +
+  xlab("Year") +
+  ylab("Mean Temperature (C)") +
+  ggtitle("Yakutat Forelands Temperature - RCP 4.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+YF_45Temps
+
+ggsave("YF_45Temps.jpeg", plot = YF_45Temps, width = 8, height = 6)
+```
+
+## RCP 8.5
+
+### Copper River Delta
+
+```{r}
+CRD_85Forecast 
+
+CRD_85Temps<- ggplot(data = CRD_85Forecast, mapping = aes(x = date)) +
+  geom_ribbon(mapping = aes(ymin = (Air_MonthAvg - std), ymax = (Air_MonthAvg + std)), color = "grey") +
+  geom_line(mapping = aes(y = Air_MonthAvg)) +
+  xlab("Year") +
+  ylab("Mean Temperature (C)") +
+  ggtitle("Copper River Delta Temperature - RCP 8.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+CRD_85Temps
+
+ggsave("CRD_85Temps.jpeg", plot = CRD_85Temps, width = 8, height = 6)
+```
+
+### Yakutat Forelands
+
+```{r}
+YF_85Forecast 
+
+YF_85Temps<- ggplot(data = YF_85Forecast, mapping = aes(x = date)) +
+  geom_ribbon(mapping = aes(ymin = (Air_MonthAvg - std), ymax = (Air_MonthAvg + std)), color = "grey") +
+  geom_line(mapping = aes(y = Air_MonthAvg)) +
+  xlab("Year") +
+  ylab("Mean Temperature (C)") +
+  ggtitle("Yakutat Forelands Temperature - RCP 8.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+YF_85Temps
+
+ggsave("YF_85Temps.jpeg", plot = YF_85Temps, width = 8, height = 6)
+```
+Bring in the SNAP data here to see how these CORDEX forecasts compare to the SNAP one since they seem much lower 
+
+```{r}
+CRD_snap45 <- read.csv() # file read in not working properly
+
+CRD_45Forecast 
+
+CRD_45Temps<- ggplot(data = CRD_45Forecast, mapping = aes(x = date)) +
+  geom_ribbon(mapping = aes(ymin = (Air_MonthAvg - std), ymax = (Air_MonthAvg + std)), color = "grey") +
+  geom_line(mapping = aes(y = Air_MonthAvg)) +
+  geom_line(data = CRD_snap45, mapping = aes(x = date, y = Air_MonthAvg, color = "red")) +
+  xlab("Year") +
+  ylab("Mean Temperature (C)") +
+  ggtitle("Copper River Delta Temperature - RCP 4.5") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+CRD_45Temps
+
+ggsave("CRD_45Temps.jpeg", plot = CRD_45Temps, width = 8, height = 6)
+
+```
+
+
+
