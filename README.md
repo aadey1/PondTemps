@@ -10,7 +10,7 @@ Data analysis for pond water temperature forecast model using air
 temperatures
 
 Multiple Attempts Made -- Finalized Version is "BiassCorrection" folder
-here, but other versions are in the "PastMethods folder.
+here, but other versions are in the "PastMethods" folder.
 
 Past verions include: 1. a random walk method based on EFI notes 2. an
 individual model method 3. a pooled model method 4. a method using geo
