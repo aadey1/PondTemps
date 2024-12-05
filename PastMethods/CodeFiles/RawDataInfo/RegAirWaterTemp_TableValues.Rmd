@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Load in the CR dataset 
 ```{r}
-CR_Temps <- read.csv("CR_45SNAPForecast.csv", header=TRUE)
+CR_Temps <- read.csv("BiasCorrection/DataFiles/CR_45SNAPForecast_MonCorr.csv", header=TRUE)
 
 library(dplyr)
 # remove the first column here and change the column for Date to date
@@ -26,10 +26,11 @@ obsData <- CR_Temps %>%
 
 Fitting the models for each of the ponds
 ```{r}
-# BVS
-lm1 <- lm(obsData$BVS ~ obsData$Air_MonthAvg)
-summary(lm1)
+# Fit the linear model with the filtered data
+lm1_positive <- lm(BVS ~ Air_MonthAvg, data = obsData)
 
+# Summarize the results
+summary(lm1_positive)
 ```
 
 ```{r}
@@ -89,9 +90,48 @@ summary(lm9)
 
 ```
 
+Make a plot of each pond here
+
+```{r}
+library(ggplot2)
+library(tidyr)
+
+# Convert the data to long format for water temperature variables
+obsData_long <- obsData %>%
+  pivot_longer(cols = c(BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD),
+               names_to = "pond",
+               values_to = "Water_Temp")
+
+# Create the plot faceted by pond with custom sizes for title, labels, and ticks
+CRD <- ggplot(obsData_long, aes(x = Air_MonthAvg, y = Water_Temp)) +
+  geom_point(color = "grey") +
+  geom_smooth(method = "lm", color = "black", se = FALSE) +  # Add a single black trend line
+  geom_vline(xintercept = 0, color = "darkgrey", size = 0.3, linetype = "dashed") +  # Thin grey vertical line at x = 0
+  geom_hline(yintercept = 0, color = "darkgrey", size = 0.3, linetype = "dashed") + # Thin grey horizontal line at y = 0
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dotted", size = 0.6) +  # 1:1 red dotted line
+  theme_classic() +
+  labs(x = "Air Temperature (°C)",
+       y = "Water Temperature (°C)",
+       title = "Copper River Delta") +
+  facet_wrap(~pond) +
+  theme(
+    legend.position = "none",  # Remove legend
+    plot.title = element_text(hjust = 0.5, size = 20),  # Title size
+    axis.title = element_text(size = 16),  # Axis labels size
+    axis.text = element_text(size = 12),  # Tick mark size
+    strip.text = element_text(size = 16),  # Facet label size
+    plot.title.position = "plot"  # Position title at the top of the plot
+  )
+CRD
+
+ggsave("BiasCorrection/Plots/CRD_RegressionAW.jpeg", plot = CRD, width = 8, height = 6)
+
+```
+
+
 # Load in the YF dataset 
 ```{r}
-YF_Temps <- read.csv("YF_45SNAPForecast.csv", header=TRUE)
+YF_Temps <- read.csv("BiasCorrection/DataFiles/YF_45SNAPForecast_MonCorr.csv", header=TRUE)
 
 library(dplyr)
 # remove the first column here and change the column for Date to date
@@ -178,4 +218,39 @@ summary(lm10)
 # RHM
 lm11 <- lm(obsData$UBP4~ obsData$Air_MonthAvg)
 summary(lm11)
+```
+
+```{r}
+library(ggplot2)
+library(tidyr)
+
+# Convert the data to long format for water temperature variables
+obsData_long <- obsData %>%
+  pivot_longer(cols = c(MP1, MP3, MP5, MP8, PL1, PL2, PL3, UBP1, UBP2, UBP3, UBP4),
+               names_to = "pond",
+               values_to = "Water_Temp")
+
+# Create the plot faceted by pond with custom sizes for title, labels, and ticks
+YF <- ggplot(obsData_long, aes(x = Air_MonthAvg, y = Water_Temp)) +
+  geom_point(color = "grey") +
+  geom_smooth(method = "lm", color = "black", se = FALSE) +  # Add a single black trend line
+  geom_vline(xintercept = 0, color = "darkgrey", size = 0.3, linetype = "dashed") +  # Thin grey vertical line at x = 0
+  geom_hline(yintercept = 0, color = "darkgrey", size = 0.3, linetype = "dashed") + # Thin grey horizontal line at y = 0
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dotted", size = 0.6) +  # 1:1 red dotted line
+  theme_classic() +
+  labs(x = "Air Temperature (°C)",
+       y = "Water Temperature (°C)",
+       title = "Yakutat Forelands") +
+  facet_wrap(~pond) +
+  theme(
+    legend.position = "none",  # Remove legend
+    plot.title = element_text(hjust = 0.5, size = 20),  # Title size
+    axis.title = element_text(size = 16),  # Axis labels size
+    axis.text = element_text(size = 12),  # Tick mark size
+    strip.text = element_text(size = 16),  # Facet label size
+    plot.title.position = "plot"  # Position title at the top of the plot
+  )
+YF
+
+ggsave("BiasCorrection/Plots/YF_RegressionAW.jpeg", plot = CRD, width = 8, height = 6)
 ```

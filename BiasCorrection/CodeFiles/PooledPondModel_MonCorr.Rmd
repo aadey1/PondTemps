@@ -26,7 +26,7 @@ Then separate the data into air and water temperature files
 
 ```{r}
 # Air and water temperature data: CR location, 4.5 scenario
-CR_Temps <- read.csv("CR_45SNAPForecast_MonCorr.csv", header=TRUE)
+CR_Temps <- read.csv("BiasCorrection/DataFiles/CR_45SNAPForecast_MonCorr.csv", header=TRUE)
 
 # Air temperature variables
 CR_AirTemp45 <- CR_Temps %>%
@@ -141,6 +141,71 @@ A couple quick checks here
 ```{r}
 # plot(CRD45_out_params)
 gelman.diag(CRD45_out_params, confidence = 0.99)
+
+```
+
+### Extract Posterior Samples for Slopes and Intercepts
+``` {r}
+# Step 1: Extract Posterior Samples
+params_samples <- as.matrix(CRD45_out_params)  # Extract model parameters
+
+# Extract the global slope (beta[2]) and find the correct columns for beta[2]
+beta2_columns <- grep("beta\\[2\\]", colnames(params_samples))
+beta2 <- params_samples[, beta2_columns]  # Extract posterior samples for beta[2]
+
+# Extract pond-specific intercepts (int[1] to int[9])
+int_columns <- grep("int\\[", colnames(params_samples))  # Find the columns for pond-specific intercepts
+int_samples <- params_samples[, int_columns]  # Extract posterior samples for pond-specific intercepts
+
+# Step 2: Calculate Pond-Specific Slopes
+# Add global slope (beta2) to each pond's intercept to calculate the pond-specific slopes
+pond_slopes <- int_samples + matrix(rep(beta2, ncol(int_samples)), nrow = nrow(int_samples), byrow = TRUE)
+
+# Step 3: Summarize Pond-Specific Slopes
+# Summarize the pond-specific slopes by calculating the mean, SD, and quantiles (2.5%, 50%, 97.5%)
+pond_slopes_summary <- data.frame(
+  pond = 1:ncol(int_samples),  # For each pond (1 to number of ponds)
+  mean_slope = apply(pond_slopes, 2, mean),  # Mean of the pond-specific slopes
+  sd_slope = apply(pond_slopes, 2, sd),  # SD of the pond-specific slopes
+  `2.5%` = apply(pond_slopes, 2, quantile, probs = 0.025),  # 2.5% quantile
+  `50%` = apply(pond_slopes, 2, quantile, probs = 0.5),  # Median (50% quantile)
+  `97.5%` = apply(pond_slopes, 2, quantile, probs = 0.975)  # 97.5% quantile
+)
+
+# View the summary of pond-specific slopes
+print(pond_slopes_summary)
+
+# Making a plot of these--> first changing the pond names over
+
+# Example pond names (replace with actual pond names)
+# -- these are in the same order as the pull information from above
+pond_names <- c('BVS', 'CAB', 'TIN', 'SQR', 'CAN', 'EYS', 'TIS', 'WDD', 'RHM')
+
+# Add pond names to the summary table
+pond_slopes_summary$pond_name <- pond_names
+
+# Rename the columns for easier reference
+pond_slopes_summary <- pond_slopes_summary %>%
+  rename(
+    lower_CI = `X2.5.`,
+    median_CI = `X50.`,
+    upper_CI = `X97.5.`
+  )
+
+
+library(ggplot2)
+
+# Plot the mean slopes with 95% credible intervals
+ggplot(pond_slopes_summary, aes(x = pond_name, y = mean_slope, ymin = lower_CI, ymax = upper_CI)) +
+  geom_pointrange(color = "blue", size = 1) +  # Add points with range
+  geom_errorbar(width = 0.2) +  # Error bars for 95% CI
+  theme_minimal() +
+  labs(title = "Pond-Specific Slopes", x = "Pond", y = "Slope") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate pond names for readability
+
+# Write the pond slopes summary to a CSV file
+write.csv(pond_slopes_summary, "BiasCorrection/DataFiles/CRD45_pond_slopes_summary.csv", row.names = FALSE)
+
 
 ```
 
@@ -565,6 +630,95 @@ A couple quick checks here
 # plot(CRD85_out_params)
 gelman.diag(CRD85_out_params, confidence = 0.99)
 
+```
+
+### Extract Posterior Samples for Slopes and Intercepts
+``` {r}
+# Step 1: Extract Posterior Samples
+params_samples <- as.matrix(CRD85_out_params)  # Extract model parameters
+
+# Extract the global slope (beta[2]) and find the correct columns for beta[2]
+beta2_columns <- grep("beta\\[2\\]", colnames(params_samples))
+beta2 <- params_samples[, beta2_columns]  # Extract posterior samples for beta[2]
+
+# Extract pond-specific intercepts (int[1] to int[9])
+int_columns <- grep("int\\[", colnames(params_samples))  # Find the columns for pond-specific intercepts
+int_samples <- params_samples[, int_columns]  # Extract posterior samples for pond-specific intercepts
+
+# Step 2: Calculate Pond-Specific Slopes
+# Add global slope (beta2) to each pond's intercept to calculate the pond-specific slopes
+pond_slopes <- int_samples + matrix(rep(beta2, ncol(int_samples)), nrow = nrow(int_samples), byrow = TRUE)
+
+# Step 3: Summarize Pond-Specific Slopes
+# Summarize the pond-specific slopes by calculating the mean, SD, and quantiles (2.5%, 50%, 97.5%)
+pond_slopes_summary <- data.frame(
+  pond = 1:ncol(int_samples),  # For each pond (1 to number of ponds)
+  mean_slope = apply(pond_slopes, 2, mean),  # Mean of the pond-specific slopes
+  sd_slope = apply(pond_slopes, 2, sd),  # SD of the pond-specific slopes
+  `2.5%` = apply(pond_slopes, 2, quantile, probs = 0.025),  # 2.5% quantile
+  `50%` = apply(pond_slopes, 2, quantile, probs = 0.5),  # Median (50% quantile)
+  `97.5%` = apply(pond_slopes, 2, quantile, probs = 0.975)  # 97.5% quantile
+)
+
+# View the summary of pond-specific slopes
+print(pond_slopes_summary)
+
+# Making a plot of these--> first changing the pond names over
+
+# Example pond names (replace with actual pond names)
+# -- these are in the same order as the pull information from above
+pond_names <- c('BVS', 'CAB', 'TIN', 'SQR', 'CAN', 'EYS', 'TIS', 'WDD', 'RHM')
+
+# Add pond names to the summary table
+pond_slopes_summary$pond_name <- pond_names
+
+# Rename the columns for easier reference
+pond_slopes_summary <- pond_slopes_summary %>%
+  rename(
+    lower_CI = `X2.5.`,
+    median_CI = `X50.`,
+    upper_CI = `X97.5.`
+  )
+
+
+library(ggplot2)
+
+# Plot the mean slopes with 95% credible intervals
+ggplot(pond_slopes_summary, aes(x = pond_name, y = mean_slope, ymin = lower_CI, ymax = upper_CI)) +
+  geom_pointrange(color = "blue", size = 1) +  # Add points with range
+  geom_errorbar(width = 0.2) +  # Error bars for 95% CI
+  theme_minimal() +
+  labs(title = "Pond-Specific Slopes", x = "Pond", y = "Slope") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate pond names for readability
+
+```
+
+Combine and Label Results
+
+```{r}
+# Add pond names to the summaries
+ponds <- as.data.frame(colnames(CR_WaterTemp85[-1]))
+colnames(ponds) <- "pond_name"
+ponds$pond <- 1:nrow(ponds)
+
+beta_summary <- beta_summary |>
+  dplyr::left_join(ponds, by = "pond")
+
+int_summary <- int_summary |>
+  dplyr::left_join(ponds, by = "pond")
+
+# Combine slopes and intercepts into one data frame
+model_summary <- dplyr::left_join(beta_summary, int_summary, by = "pond_name", suffix = c("_slope", "_intercept"))
+
+# View the combined summary
+print(model_summary)
+
+```
+
+Save the results
+
+```{r}
+write.csv(model_summary, "CRD85_pond_slopes_intercepts_summary.csv", row.names = FALSE)
 ```
 
 Visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's
@@ -1054,6 +1208,64 @@ gelman.diag(YF45_out_params, confidence = 0.99)
 
 ```
 
+### Extract Posterior Samples for Slopes and Intercepts
+``` {r}
+# Extract posterior samples as a matrix
+params_matrix <- as.matrix(YF45_out_params)
+
+# Get the slope and intercept columns
+beta_cols <- grep("^beta", colnames(params_matrix))  # Columns for slopes (beta)
+int_cols <- grep("^int", colnames(params_matrix))    # Columns for intercepts (int)
+
+# Summarize slopes (beta)
+beta_summary <- data.frame(
+  pond = 1:length(beta_cols),
+  mean = apply(params_matrix[, beta_cols], 2, mean),
+  sd = apply(params_matrix[, beta_cols], 2, sd),
+  `2.5%` = apply(params_matrix[, beta_cols], 2, quantile, probs = 0.025),
+  `50%` = apply(params_matrix[, beta_cols], 2, quantile, probs = 0.5),
+  `97.5%` = apply(params_matrix[, beta_cols], 2, quantile, probs = 0.975)
+)
+
+# Summarize intercepts (int)
+int_summary <- data.frame(
+  pond = 1:length(int_cols),
+  mean = apply(params_matrix[, int_cols], 2, mean),
+  sd = apply(params_matrix[, int_cols], 2, sd),
+  `2.5%` = apply(params_matrix[, int_cols], 2, quantile, probs = 0.025),
+  `50%` = apply(params_matrix[, int_cols], 2, quantile, probs = 0.5),
+  `97.5%` = apply(params_matrix[, int_cols], 2, quantile, probs = 0.975)
+)
+```
+
+Combine and Label Results
+
+```{r}
+# Add pond names to the summaries
+ponds <- as.data.frame(colnames(YF_WaterTemp45[-1]))
+colnames(ponds) <- "pond_name"
+ponds$pond <- 1:nrow(ponds)
+
+beta_summary <- beta_summary |>
+  dplyr::left_join(ponds, by = "pond")
+
+int_summary <- int_summary |>
+  dplyr::left_join(ponds, by = "pond")
+
+# Combine slopes and intercepts into one data frame
+model_summary <- dplyr::left_join(beta_summary, int_summary, by = "pond_name", suffix = c("_slope", "_intercept"))
+
+# View the combined summary
+print(model_summary)
+
+```
+
+Save the results
+
+```{r}
+write.csv(model_summary, "YF45_pond_slopes_intercepts_summary.csv", row.names = FALSE)
+```
+
 Visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's
 
 Transform the samples back from the log domain to the linear domain
@@ -1473,6 +1685,64 @@ A couple quick checks here
 # plot(YF85_out_params)
 gelman.diag(YF85_out_params, confidence = 0.99)
 
+```
+
+### Extract Posterior Samples for Slopes and Intercepts
+``` {r}
+# Extract posterior samples as a matrix
+params_matrix <- as.matrix(YF85_out_params)
+
+# Get the slope and intercept columns
+beta_cols <- grep("^beta", colnames(params_matrix))  # Columns for slopes (beta)
+int_cols <- grep("^int", colnames(params_matrix))    # Columns for intercepts (int)
+
+# Summarize slopes (beta)
+beta_summary <- data.frame(
+  pond = 1:length(beta_cols),
+  mean = apply(params_matrix[, beta_cols], 2, mean),
+  sd = apply(params_matrix[, beta_cols], 2, sd),
+  `2.5%` = apply(params_matrix[, beta_cols], 2, quantile, probs = 0.025),
+  `50%` = apply(params_matrix[, beta_cols], 2, quantile, probs = 0.5),
+  `97.5%` = apply(params_matrix[, beta_cols], 2, quantile, probs = 0.975)
+)
+
+# Summarize intercepts (int)
+int_summary <- data.frame(
+  pond = 1:length(int_cols),
+  mean = apply(params_matrix[, int_cols], 2, mean),
+  sd = apply(params_matrix[, int_cols], 2, sd),
+  `2.5%` = apply(params_matrix[, int_cols], 2, quantile, probs = 0.025),
+  `50%` = apply(params_matrix[, int_cols], 2, quantile, probs = 0.5),
+  `97.5%` = apply(params_matrix[, int_cols], 2, quantile, probs = 0.975)
+)
+```
+
+Combine and Label Results
+
+```{r}
+# Add pond names to the summaries
+ponds <- as.data.frame(colnames(YF_WaterTemp85[-1]))
+colnames(ponds) <- "pond_name"
+ponds$pond <- 1:nrow(ponds)
+
+beta_summary <- beta_summary |>
+  dplyr::left_join(ponds, by = "pond")
+
+int_summary <- int_summary |>
+  dplyr::left_join(ponds, by = "pond")
+
+# Combine slopes and intercepts into one data frame
+model_summary <- dplyr::left_join(beta_summary, int_summary, by = "pond_name", suffix = c("_slope", "_intercept"))
+
+# View the combined summary
+print(model_summary)
+
+```
+
+Save the results
+
+```{r}
+write.csv(model_summary, "YF85_pond_slopes_intercepts_summary.csv", row.names = FALSE)
 ```
 
 Visualize the output by just looking at the **95% Credible interval of the time-series of X's** and compare that to the observed Y's
