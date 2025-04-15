@@ -1,0 +1,285 @@
+---
+title: "Yakutat Site vs Airport Temps"
+output: html_notebook
+---
+
+Setting up the R workspace
+
+```{r}
+#call packages
+library(ggplot2) #for plotting
+library(plyr) #for data organization
+library(reshape2)  #for data organization
+library(zoo) #for rmse, data interpolation
+#library("zoo") #for interpolating to fill data gaps
+library(tidyverse)
+library(ggpubr)#for arranging plots
+library(base)
+library(lubridate)
+library(ModelMetrics)
+
+#remove all existing variables
+rm(list=ls())
+```
+
+
+# Section 1 - comparing the climates of CDV and YAK. 
+  The findings were that the climates are similar enough to compare.
+
+
+## Load climate data for Cordova and Yakutat
+    1 Jan 1991 thru 31 Dec 2019. Can update in one year to be full 30 yr climate period
+    
+````{r}
+met1<-read.csv("~/Dropbox/SWEL/CopperRiverDelta/PondTemps/DataAnalysis/PondTempsAnalysis/DataFiles/ClimateData/2001_2019_CDV_YAK/daily_wx_data.csv",header=T, na.strings=-9999)
+#if file is in the iCloud drive and not downloaded, the line above will not work. Made sure file is downloaded.
+#also this needs to be updated through 2020
+met1$DATE=as.Date(met1$DATE, format="%m/%d/%Y")
+summary(met1)
+#fix erroneous Feb 28, 2012 data with known correct value
+met1[met1$DATE=="2012-02-28" & met1$STATION== "USW00026410" ,] #
+met1$TMAX[met1$DATE=="2012-02-28" & met1$STATION== "USW00026410" ]<-2.2 #note this fix number comes from computing hrly data with mh.all code below LA 1/16/16
+met1[met1$DATE=="2012-02-28" & met1$STATION== "USW00026410" ,] #
+```
+
+Find average temperature
+
+```{r}
+met1$TAVG2<-(met1$TMAX+met1$TMIN)/2 #*[This isn't the average though? - Erik]
+clim.period<-seq(as.Date("2001-01-01"),as.Date("2019-12-31"), by="day") #change to 1/1/1991 and  12/31/2021 when data are available
+clim.df<-data.frame("STATION"=rep(unique(met1$STATION),each=length(clim.period)),"DATE"=rep(clim.period, times= length(unique(met1$STATION))))
+met2<-merge(clim.df,met1, by=c("STATION","DATE"), all.x=T)
+met2$NAME<-as.character(met2$NAME)
+met2$NAME<-factor(substr(met2$NAME,1,nchar(met2$NAME)-7))
+summary(met2)
+```
+
+Subset for period of Yakutat water temp data record (nearest year)
+
+```{r}
+met2b<-subset(met2, NAME %in% c("CORDOVA AIRPORT","YAKUTAT AIRPORT") & DATE >= as.Date("2012-01-01"))
+met2b$NAME<-factor(met2b$NAME)
+range(met2b$DATE)
+```
+
+Plot Cordova vs. Yakutat air temps
+
+```{r}
+ggplot(data=met2b, aes(x=DATE))+
+  geom_hline(yintercept=0,lwd=.5,lty=2)+
+  geom_ribbon(aes(ymin=TMIN,ymax=TMAX), fill="azure3",alpha=.6)+
+  geom_line(aes(y=TMAX), color="red",linewidth=1)+
+  geom_line(aes(y=TMIN), color="blue",linewidth=1)+
+  geom_line(aes(y=TAVG2), color="black",linewidth=1)+
+  xlab("Date")+
+  ylab(expression(paste("Air temperature ( ", degree ~C, " )")))+
+  facet_wrap(~NAME,ncol=1)+
+  theme_minimal()
+
+#export plot
+ggsave("air_temps.png", width=6.5, height=4, units="in",dpi=300)
+```
+
+## Load weather data
+
+```{r}
+met2b$monyr<-format(met2b$DATE, "%m-%Y") #add month-year column
+met2b$wkyr<-format(met2b$DATE,"%U-%Y") # add week-year column
+
+met3<-ddply(met2b, .(NAME,monyr,wkyr), summarize,
+            Awkavg=round(mean(TAVG2, na.rm=T),2),
+            Awkmax=round(max(TMAX, na.rm=T),2),
+            Awkmin=round(min(TMIN, na.rm=T),2))
+
+#Missing Data for wkyr 50-2019
+met2b %>% subset(NAME=="YAKUTAT AIRPORT" & wkyr == "50-2019")
+#Remove 
+met3 <- met3 %>%
+  subset(!(NAME=="YAKUTAT AIRPORT" & wkyr == "50-2019"))
+```
+
+Regression of Cordova vs Yakutat
+
+```{r}
+lm1<-merge(subset(met2b, NAME == "CORDOVA AIRPORT", select=c(DATE,TAVG2)), subset(met2b, NAME == "YAKUTAT AIRPORT",select=c(DATE,TAVG2)), by="DATE", all=T)
+colnames(lm1)<-c("DATE","CORDOVA","YAKUTAT")
+summary(lm(YAKUTAT~CORDOVA,data=lm1))
+
+ggplot(data=lm1, aes(x=CORDOVA,y=YAKUTAT))+
+  geom_abline(slope=1, intercept=0, color="gray50", lty=2)+
+  geom_point()+
+  geom_smooth(method="lm", color="blue")+
+  xlab("Mean daily air temperature, Cordova Airport")+
+  ylab("Mean daily air temperature, Yakutat Airport")+
+  theme_minimal()
+
+ggsave("YakCorreg.png", width=6.5, height=4, units="in",dpi=300)
+
+#Air temperature stats Cordova vs. Yakutat
+lapply(unique(met2b$NAME), function(x) summary(met2b[met2b$NAME==x,]))
+```
+
+# Section 2 - Can we use the airport data instead of our own air temp data.
+
+## Load air temperature data from Yakutat ponds
+
+```{r}
+dir1 <- "~/Dropbox/SWEL/CopperRiverDelta/PondTemps/DataAnalysis/PondTempsAnalysis/DataFiles/PondData/Yakutat/Air/"
+yktdat<-list.files(dir1)
+```
+
+Organize and plot this air temp data
+
+```{r}
+sitekey<-c("MP1", "MP3","MP5","MP8","PL1","PL2","PL3","UBP1","UBP2", "UBP3","UBP4")
+yktdat
+bysite1<-lapply(1:length(sitekey),function(x) grep(sitekey[x],yktdat))
+length(bysite1[[1]])
+yktlist<-lapply(paste0(dir1,yktdat),read.csv, skip=1, header=T,col.names=c("Date","Time","Temp"))
+len.list<-lapply(1:length(yktlist),function(x) nrow(yktlist[[x]]))
+
+
+df5<-do.call(rbind,yktlist)
+
+lenkey<-lapply(1:length(bysite1), function(x) rep(sitekey[x],length(bysite1[[x]])))
+lenkey2<-unlist(lenkey)
+
+df5$site<-unlist(lapply(1:length(lenkey2),function(x){ 
+  rep(lenkey2[x],times=as.numeric(len.list[[x]]))
+})) #add sitename column
+
+
+df5$Date<-as.Date(df5$Date,format="%m/%d/%Y") #format date
+
+df5$Region<-"YF"
+
+summary(df5)
+
+df5a<-ddply(df5,.(Date,site), summarize,
+            Tmean = round(mean(Temp, na.rm=T),2),
+            Tmax= round(max(Temp, na.rm=T),2),
+            Tmin= round(min(Temp, na.rm=T),2),
+            SD= round(sd(Temp, na.rm=T),2),
+            Region = unique(Region))
+
+df5a <- df5a %>% subset(!is.na(Date)) 
+
+
+YF.period<-seq(min(df5$Date, na.rm=T),max(df5$Date, na.rm=T), by="day") #maximum study period across all sites
+YF.df<-data.frame("site"=rep(unique(df5a$site),each=length(YF.period)),"Date"=rep(YF.period, times= length(unique(df5a$site))))
+df5b<-merge(YF.df,df5a, by=c("Date","site"), all.x=T)
+
+ggplot(df5b, aes(x=Date, y= Tmean))+
+  geom_line()+
+  ylab(expression(paste("Daily mean air temperature ( ", degree ~C, " )")))+
+  scale_x_date(date_breaks="1 year", date_labels = "%Y")+
+  facet_wrap(~site, ncol=3)+
+  ggtitle("Yakutat site air temperatures")+
+  theme_bw()+
+  theme(axis.text.x=element_text(angle=50, vjust=1, hjust=1))
+
+#export plot
+ggsave("YK_air_temps.png", width=8.5, height=6, units="in",dpi=300)
+```
+
+Find 7 day non-rolling averages to compare to Yakutat Airport
+
+```{r}
+#Yakutat
+df5b$wkyr<-format(df5b$Date,"%U-%Y") #add week-year column
+
+df5c<-ddply(df5b, .(site,wkyr), summarise,
+            wkavg=round(mean(Tmean, na.rm = T),2),
+            wkmax=round(max(Tmax, na.rm = T),2),
+            wkmin=round(min(Tmin, na.rm = T),2))
+```
+
+Combining this air temp data with the airport data
+
+```{r}
+#merge Yakutat dat with weather dat
+df5d<-merge(df5c,subset(met3, NAME=="YAKUTAT AIRPORT"), by="wkyr",all.x=T)
+df5d$Region<-"YF" #restore region column in prep for merge with Copper River data.
+```
+
+Regression of air vs. airport
+
+```{r}
+ggplot(na.omit(df5d), aes(x=Awkavg, y=wkavg))+
+  geom_hline(yintercept = 0, linetype=2)+
+  geom_vline(xintercept = 0,linetype=2)+
+  geom_abline(slope=1,intercept = 0, color = "red", lty=3)+
+  geom_point(color="darkgray")+
+  geom_smooth(method="lm", color="black", se=F)+
+  ylab(expression(paste("Site air temperature ( ", degree ~C, " )")))+
+  xlab(expression(paste("Airport air temperature ( ", degree ~C, ")")))+
+  ggtitle("Yakutat air temperatures")+
+  facet_wrap(~site,ncol=3)+
+  theme_minimal()
+
+#export plot
+ggsave("YK_air_lm_reg.png", width=6, height=6, units="in",dpi=300)
+```
+
+## Compare site specific air temp data to airport for Yakutat
+
+```{r}
+sites2<-c("MP1", "MP3","MP5","MP8","PL1","PL2","PL3","UBP1","UBP2", "UBP3","UBP4")
+
+lm.1.res<-lapply(sites2,function(x) try(lm(wkavg~Awkavg,data=df5d, subset= site==x),silent=T)) #run LM 
+lm.1.sum<-lapply(1:length(sites2),function(x) summary(lm.1.res[[x]]))
+lm.1.sum
+lm.1.pred<-lapply(sites2,function(x) try(predict(lm(wkavg~Awkavg,data=df5d, subset= site==x)),silent=T)) 
+lm.1.obs<-lapply(sites2, function(x) na.omit(subset(df5d, subset= site==x, select = wkavg )))
+```
+
+Create summary table for comparing models
+
+```{r}
+# Load necessary packages
+library(dplyr)
+library(broom)
+
+# Define the list of sites
+sites2 <- c("MP1", "MP3", "MP5", "MP8", "PL1", "PL2", "PL3", "UBP1", "UBP2", "UBP3", "UBP4")
+
+# Perform regression for each site and extract statistics
+regression_results <- lapply(sites2, function(site) {
+  site_data <- df5d %>% filter(site == !!site)
+  
+  # Perform linear regression
+  model <- lm(wkavg ~ Awkavg, data = site_data)
+  
+  # Extract regression statistics
+  tidy_model <- tidy(model)  # using broom package to get tidy output
+  glance_model <- glance(model)  # using broom package to get model-level statistics
+  
+  # Extracting intercept, slope, R2, and p-value
+  intercept <- tidy_model$estimate[tidy_model$term == "(Intercept)"]
+  slope <- tidy_model$estimate[tidy_model$term == "Awkavg"]
+  r_squared <- glance_model$r.squared
+  p_value <- tidy_model$p.value[tidy_model$term == "Awkavg"]
+  
+  # Format p-value to 3 decimal places, show as 0.000 if < 0.001
+  p_value_formatted <- ifelse(p_value < 0.001, "0.000", format(round(p_value, 3), nsmall = 3))
+  
+  # Return as a named data frame
+  return(data.frame(
+    site = site,
+    intercept = round(intercept, 3),
+    slope = round(slope, 3),
+    R2 = round(r_squared, 3),
+    p_value = p_value_formatted
+  ))
+})
+
+# Combine all results into a single data frame
+results_table <- do.call(rbind, regression_results)
+
+# Print the results table
+print(results_table)
+
+# Optionally, save the results table to a CSV file
+write.csv(results_table, "Yakutat_Regression_Results.csv", row.names = FALSE)
+```
+

@@ -1,0 +1,830 @@
+---
+title: "PreparingTempData - CORDEX"
+author: "Amaryllis Adey"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Goals
+
+1.  To create a single file document that has all the data for the pond temperature study together in one place
+    This is for the CORDEX data set here
+2.  To ensure that this format is well setup for use in the analysis code that will be adapted from 'Exercise_06_StateSpace.Rmd
+
+Code from the linear regression models Created by Luca Adelfio, Rachel Hughes, Amaryllis Adey, and Erik Curtis Adapted here to fit code from Alyssa
+
+## Set up the packages to be used throughout this code
+
+```{r}
+library(ggplot2) #for plotting
+library(plyr) #for data organization
+library(reshape2)  #for data organization
+library(zoo) #for rmse, data interpolation
+#library("zoo") #for interpolating to fill data gaps
+library(tidyverse)
+library(ggpubr)#for arranging plots
+library(base)
+library(lubridate)
+library(ModelMetrics)
+library(dplyr)
+```
+
+## Set up the working directory
+
+```{r}
+#remove all existing variables
+rm(list=ls())
+
+#Get working directory
+this.dir = dirname(rstudioapi::getActiveDocumentContext()$path)
+setwd(this.dir)
+
+plot.folder<- paste(this.dir,"/Plots/",sep = "") #address for exported plots
+```
+
+# Part 1 - Comparing Airport Data Between CRD and YF
+
+## Load in the data and correct issues found initially
+
+```{r}
+met1<-read.csv(paste(this.dir,"/DataFiles/ClimateData/2001_2019_CDV_YAK/daily_wx_data.csv",sep=""),header=T, na.strings=-9999)
+#if file is in the iCloud drive and not downloaded, the line above will not work. Made sure file is downloaded.
+#also this needs to be updated through 2020
+met1$DATE=as.Date(met1$DATE, format="%m/%d/%Y")
+summary(met1)
+#fix erroneous Feb 28, 2012 data with known correct value
+met1[met1$DATE=="2012-02-28" & met1$STATION== "USW00026410" ,] #
+met1$TMAX[met1$DATE=="2012-02-28" & met1$STATION== "USW00026410" ]<-2.2 #note this fix number comes from computing hrly data with mh.all code below LA 1/16/16
+met1[met1$DATE=="2012-02-28" & met1$STATION== "USW00026410" ,] #
+```
+
+## Find average temperature
+
+```{r}
+met1$TAVG2<-(met1$TMAX+met1$TMIN)/2 #*[This isn't the average though? - Erik]
+clim.period<-seq(as.Date("2001-01-01"),as.Date("2019-12-31"), by="day") #change to 1/1/1991 and  12/31/2021 when data are available
+clim.df<-data.frame("STATION"=rep(unique(met1$STATION),each=length(clim.period)),"DATE"=rep(clim.period, times= length(unique(met1$STATION))))
+met2<-merge(clim.df,met1, by=c("STATION","DATE"), all.x=T)
+met2$NAME<-as.character(met2$NAME)
+met2$NAME<-factor(substr(met2$NAME,1,nchar(met2$NAME)-7))
+summary(met2)
+
+```
+
+## Subset for period of water temperatures from CRD and YF
+
+```{r}
+met2b<-subset(met2, NAME %in% c("CORDOVA AIRPORT","YAKUTAT AIRPORT") & DATE >= as.Date("2012-01-01"))
+met2b$NAME<-factor(met2b$NAME)
+range(met2b$DATE)
+#Plot Cordova vs. Yakutat air temps
+ggplot(data=met2b, aes(x=DATE))+
+  geom_hline(yintercept=0,lwd=.5,lty=2)+
+  geom_ribbon(aes(ymin=TMIN,ymax=TMAX), fill="azure3",alpha=.6)+
+  geom_line(aes(y=TMAX), color="red",linewidth=1)+
+  geom_line(aes(y=TMIN), color="blue",linewidth=1)+
+  geom_line(aes(y=TAVG2), color="black",linewidth=1)+
+  xlab("Date")+
+  ylab(expression(paste("Air temperature ( ", degree ~C, " )")))+
+  facet_wrap(~NAME,ncol=1)+
+  theme_minimal()
+
+#export plot
+ggsave("DataFiles/air_temps.png", path=plot.folder, width=6.5, height=4, units="in",dpi=300)
+
+```
+
+## Calculating month-year averages for the weather data
+
+LA wrote this for wkyr, RH changed to monyr --\> AA calculating by monthly averages through time
+
+```{r}
+met2b$monyr<-format(met2b$DATE, "%m-%Y") #add month-year column
+
+met3 <- met2b %>%
+  group_by(NAME, monyr) %>%
+  summarise(
+    Amonavg = round(mean(TAVG2, na.rm = TRUE), 2),
+    Amonmax = round(max(TMAX, na.rm = TRUE), 2),
+    Amonmin = round(min(TMIN, na.rm = TRUE), 2)
+  ) %>%
+  ungroup()
+
+#Regress Cordova vs. Yakutat 
+lm1<-merge(subset(met2b, NAME == "CORDOVA AIRPORT", select=c(DATE,TAVG2)), subset(met2b, NAME == "YAKUTAT AIRPORT",select=c(DATE,TAVG2)), by="DATE", all=T)
+colnames(lm1)<-c("DATE","CORDOVA","YAKUTAT")
+summary(lm(YAKUTAT~CORDOVA,data=lm1))
+
+ggplot(data=lm1, aes(x=CORDOVA,y=YAKUTAT))+
+  geom_abline(slope=1, intercept=0, color="gray50", lty=2)+
+  geom_point()+
+  geom_smooth(method="lm", color="blue")+
+  xlab("Mean daily air temperature, Cordova Airport")+
+  ylab("Mean daily air temperature, Yakutat Airport")+
+  theme_minimal()
+
+ggsave("YakCorReg.png", path=plot.folder, width=6.5, height=4, units="in",dpi=300)
+
+#Air temperature stats Cordova vs. Yakutat
+lapply(unique(met2b$NAME), function(x) summary(met2b[met2b$NAME==x,]))
+
+```
+
+Here we found that there is a high correlation between the two airport datasets (I am unsure why we need this exactly??) But R2 = 0.901 which is great!
+
+# Part 2 - Comparing Logger Data to the Airport Data
+
+## Yakutat Forelands
+
+### Pull in the Yakutat logger air temeprature from the ponds
+
+```{r}
+getwd() 
+dir1<-paste0(this.dir,"/DataFiles/PondData/Yakutat/Air/")
+yktdat<-list.files(dir1)
+
+#lapply(paste0(dir1,yktdat),function(x){ncol(read.csv(x, skip=1))}) #ID a pesky data.frame with too many columns! fixed now.
+
+sitekey<-c("MP1", "MP3","MP5","MP8","PL1","PL2","PL3","UBP1","UBP2", "UBP3","UBP4")
+yktdat
+bysite1<-lapply(1:length(sitekey),function(x) grep(sitekey[x],yktdat))
+length(bysite1[[1]])
+yktlist<-lapply(paste0(dir1,yktdat),read.csv, skip=1, header=T,col.names=c("Date","Time","Temp"))
+len.list<-lapply(1:length(yktlist),function(x) nrow(yktlist[[x]]))
+
+df5<-do.call(rbind,yktlist)
+
+lenkey<-lapply(1:length(bysite1), function(x) rep(sitekey[x],length(bysite1[[x]])))
+lenkey2<-unlist(lenkey)
+
+df5$site<-unlist(lapply(1:length(lenkey2),function(x){ 
+  rep(lenkey2[x],times=as.numeric(len.list[[x]]))
+})) #add sitename column
+```
+
+### Format the Yakutat Air Temp Data
+
+```{r}
+df5$Date<-as.Date(df5$Date,format="%m/%d/%Y") #format date
+
+df5$Region<-"YF"
+
+summary(df5)
+str(df5)
+dim(df5)
+
+library(dplyr)
+unloadNamespace("reshape2")
+unloadNamespace("reshape")
+unloadNamespace("plyr")
+
+# Check the unique combination of Date and site
+unique_combinations <- df5 %>%
+  dplyr::select(Date, site) %>%
+  distinct()
+
+# Count the number of unique combinations
+nrow(unique_combinations)
+
+df5a <- df5 %>%
+  group_by(Date, site) %>%
+  summarise(
+    Tmean = round(mean(Temp, na.rm = TRUE), 2),
+    Tmax = ifelse(all(is.na(Temp)), NA_real_, round(max(Temp, na.rm = TRUE), 2)),
+    Tmin = ifelse(all(is.na(Temp)), NA_real_, round(min(Temp, na.rm = TRUE), 2)),
+    SD = round(sd(Temp, na.rm = TRUE), 2)
+  ) %>%
+  ungroup()
+
+
+
+YF.period<-seq(min(df5$Date, na.rm=T),max(df5$Date, na.rm=T), by="day") #maximum study period across all sites
+YF.df<-data.frame("site"=rep(unique(df5a$site),each=length(YF.period)),"Date"=rep(YF.period, times= length(unique(df5a$site))))
+df5b<-merge(YF.df,df5a, by=c("Date","site"), all.x=T)
+library(reshape2)
+```
+
+### Create a plot of the mean temp through time
+
+```{r}
+ggplot(df5b, aes(x=Date, y= Tmean))+
+  geom_line()+
+  ylab(expression(paste("Daily mean air temperature ( ", degree ~C, " )")))+
+  scale_x_date(date_breaks="1 year", date_labels = "%Y")+
+  facet_wrap(~site, ncol=3)+
+  ggtitle("Yakutat site air temperatures")+
+  theme_bw()+
+  theme(axis.text.x=element_text(angle=50, vjust=1, hjust=1))
+
+#export plot
+ggsave("YK_air_temps.png", path=plot.folder, width=8.5, height=6, units="in",dpi=300)
+```
+
+### Find 7 day non-rolling averages to compare to Yakutat Airport
+
+```{r}
+df5b <- df5b %>%
+  mutate(monyr = format(Date, "%m-%Y"))
+
+library(dplyr)
+unloadNamespace("reshape2")
+
+df5c <- df5b %>%
+  group_by(site, monyr) %>%
+  summarise(monavg = round(mean(Tmean, na.rm = TRUE), 2),
+            monmax = if(anyNA(Tmax)) NA else round(max(Tmax, na.rm = TRUE), 2),
+            monmin = if(anyNA(Tmin)) NA else round(min(Tmin, na.rm = TRUE), 2),
+            .groups = 'drop')
+
+met3 <- met2b %>%
+  group_by(NAME, monyr) %>%
+  summarise(
+    Amonavg = round(mean(TAVG2, na.rm = TRUE), 2),
+    Amonmax = round(max(TMAX, na.rm = TRUE), 2),
+    Amonmin = round(min(TMIN, na.rm = TRUE), 2)
+  ) %>%
+  ungroup()
+
+#merge Yakutat dat with weather dat
+df5d<-merge(df5c,subset(met3, NAME=="YAKUTAT AIRPORT"), by="monyr",all.x=T)
+df5d$Region<-"YF" #restore region column in prep for merge with Copper River data.
+
+#Air vs. airport
+ggplot(na.omit(df5d), aes(x=Amonavg, y=monavg))+
+  geom_hline(yintercept = 0, linetype=2)+
+  geom_vline(xintercept = 0,linetype=2)+
+  geom_abline(slope=1,intercept = 0, color = "red", lty=3)+
+  geom_point(color="darkgray")+
+  geom_smooth(method="lm", color="black", se=F)+
+  ylab(expression(paste("Site air temperature ( ", degree ~C, " )")))+
+  xlab(expression(paste("Airport air temperature ( ", degree ~C, ")")))+
+  ggtitle("Yakutat air temperatures")+
+  facet_wrap(~site,ncol=3)+
+  theme_minimal()
+
+#export plot
+ggsave("YK_air_lm_reg.png", path=plot.folder, width=6, height=6, units="in",dpi=300)
+```
+
+### Find Regression fit and coefficients Fit linear models for air vs. air temps at Yakutat sites/airport
+
+```{r}
+sites2<-c("MP1", "MP3","MP5","MP8","PL1","PL2","PL3","UBP1","UBP2", "UBP3","UBP4")
+
+lm.1.res<-lapply(sites2,function(x) try(lm(monavg~Amonavg,data=df5d, subset= site==x),silent=T)) #run LM 
+lm.1.sum<-lapply(1:length(sites2),function(x) summary(lm.1.res[[x]]))
+lm.1.sum
+lm.1.pred<-lapply(sites2,function(x) try(predict(lm(monavg~Amonavg,data=df5d, subset= site==x)),silent=T)) 
+lm.1.obs<-lapply(sites2, function(x) na.omit(subset(df5d, subset= site==x, select = monavg )))
+
+
+#Create summary table for comparing models
+sumtab<-as.data.frame(matrix(NA,nrow=length(sites2),ncol=6))
+colnames(sumtab)<-c("site","lm1.slope","lm1.intercept","lm1.adj.r.sq","lm1.res.stan.error","lm1.rmse")
+
+sumtab[,1]<-sites2
+
+# get air freeze results for sumtab
+sumtab[,2]<-as.vector(unlist(lapply(1:length(sites2),function(x){
+  round(coef(lm.1.res[[x]])[2],1)
+}))) #slope
+sumtab[,3]<-as.vector(unlist(lapply(1:length(sites2),function(x){
+  round(coef(lm.1.res[[x]])[1],2)
+}))) #intercept
+
+sumtab[,4]<-as.vector(unlist(lapply(1:length(sites2),function(x){
+  round(summary(lm.1.res[[x]])$adj.r.squared,2)
+}))) #adj.r.sq
+
+sumtab[,5]<-as.vector(unlist(lapply(1:length(sites2),function(x){
+  round(summary(lm.1.res[[x]])$sigma,2)
+}))) #residual standard error
+
+sumtab[,6]<-round(unlist(lapply(1:length(sites2), function(x) 
+  rmse(unlist(lm.1.pred[[x]]),unlist(lm.1.obs[[x]])))),3)
+
+print(sumtab)
+
+#Get needed info for air at pond vs. airport air temps now, as this step removes those files (repeat use of same data names below)
+rm(lm.1.obs,lm.1.pred, lm.1.res, lm.1.sum,sumtab)
+
+```
+
+### Here the files with the air temperature data are: df5d
+
+```{r}
+head(df5d)
+
+```
+
+# Part 3 - Pulling in the Water Temperature Data
+
+## Section 1 - Yakutat Forelands
+
+### Check the working directory again
+
+```{r}
+getwd()
+
+```
+
+### Load in the water temperature data from the Yakutat Foreland
+
+```{R}
+dir1<-paste0(this.dir,"/DataFiles/PondData/Yakutat/Water/")
+yktdat<-list.files(dir1)
+sitekey<-c("MP1","MP3","MP5","MP8","PL1","PL2","PL3","UBP1","UBP2", "UBP3","UBP4") #creates a vector of all of the site names
+yktdat
+bysite1<-lapply(1:length(sitekey),function(x) grep(sitekey[x],yktdat))  
+#Still working on lapply, but grep(pattern,x) searches for a pattern (sitekey) in a vector of character strings.
+#So for this, we are searching for the sitekey in yktdat
+length(bysite1[[1]])
+yktlist<-lapply(paste0(dir1,yktdat),read.csv, skip=1, header=T,col.names=c("Date","Time","Temp"))
+len.list<-lapply(1:length(yktlist),function(x) nrow(yktlist[[x]]))
+
+df1<-do.call(rbind,yktlist)
+
+yktlenkey<-lapply(1:length(bysite1), function(x) rep(sitekey[x],length(bysite1[[x]])))
+yktlenkey2<-unlist(yktlenkey)
+```
+
+### Format the dataframe
+
+Include a date, site name column, YF for region
+
+```{r}
+df1$site<-unlist(lapply(1:length(yktlenkey2),function(x){ 
+  rep(yktlenkey2[x],times=as.numeric(len.list[[x]]))
+})) #add sitename column
+
+
+df1$Date<-as.Date(df1$Date,format="%m/%d/%Y") #format date
+
+df1$Region<-"YF"
+
+summary(df1)
+
+library(dplyr)
+unloadNamespace("reshape2")
+
+df1a <- df1 %>%
+  group_by(Date, site) %>%
+  summarise(
+    Tmean = round(mean(Temp, na.rm = TRUE), 2),
+    Tmax = round(max(Temp, na.rm = TRUE), 2),
+    Tmin = round(min(Temp, na.rm = TRUE), 2),
+    SD = round(sd(Temp, na.rm = TRUE), 2)
+  )
+
+library(reshape2)
+
+YF.period<-seq(min(df1$Date, na.rm=T),max(df1$Date, na.rm=T), by="day") #maximum study period across all sites
+YF.df<-data.frame("site"=rep(unique(df1a$site),each=length(YF.period)),"Date"=rep(YF.period, times= length(unique(df1a$site))))
+df1b<-merge(YF.df,df1a, by=c("Date","site"), all.x=T)
+
+df1b$Tmean[df1b$Tmean<0]<-0  #change mean values less than 0 to 0. Tmin will still reflect days when negative values were recorded, indicating air exposure in winter.
+```
+
+### Create a plot of the Yakutat Foreland Pond Temperatures through time
+
+```{r}
+ggplot(df1b, aes(x=Date, y= Tmean))+
+  geom_line()+
+  ylab(expression(paste("Daily mean water temperature ( ", degree ~C, " )")))+
+  scale_x_date(date_breaks="1 year", date_labels = "%Y")+
+  facet_wrap(~site, ncol=3)+
+  theme_minimal()+
+  ggtitle("Yakutat Foreland")+
+  theme(axis.text.x=element_text(angle=50, vjust=1, hjust=1))
+
+#export plot
+ggsave("YF_water_temps.png", path=plot.folder, width=6, height=6, units="in",dpi=300)
+```
+
+## Section 2 - Copper River Delta
+
+### Get the working directory info
+
+```{r}
+getwd() 
+```
+
+### Pull in the data files
+
+```{r}
+dir2<-paste0(this.dir,"/DataFiles/PondData/Cordova/Water/")
+
+crdat<-list.files(dir2)
+
+sitekeycr<-c("BeaverS", "Cabin","CanneryControl", "EyakS","RHM","Square","TDN", "TDS", "Wooded") #searching for these names
+crdat
+bysite2<-lapply(1:length(sitekeycr),function(x) grep(sitekeycr[x],crdat)) #if this organizes the data by site 
+length(bysite2) #used to be length(bysite[[1]]), but RH changed because this gives the length of bysite1, not the length of the first bysite1 (bysite[[1]])
+crlist<-lapply(paste0(dir2,crdat),read.csv, skip=1, header=T,col.names=c("Date","Time","Temp"),row.names=NULL) 
+crlen.list<-lapply(1:length(crlist),function(x) nrow(crlist[[x]]))
+
+df2<-do.call(rbind,crlist)
+
+crlenkey<-lapply(1:length(bysite2), function(x) rep(sitekeycr[x],length(bysite2[[x]])))
+crlenkey2<-unlist(crlenkey)
+length(crlenkey2)
+```
+
+### Format the dataframe
+
+Include a date, site name column, YF for region
+
+```{r}
+df2$site<-unlist(lapply(1:length(crlenkey2),function(x){ 
+  rep(crlenkey2[x],times=as.numeric(crlen.list[[x]]))
+})) #add sitename column
+
+df2$Date<-as.Date(df2$Date,format="%m/%d/%Y") #format date
+
+df2$Region<-"CR"
+
+library(plyr)
+
+#Change site names to Carmella's codes for consistency with three character Yakutat codes
+df2$site<-mapvalues(df2$site, from = c("BeaverS", "Cabin","CanneryControl", "EyakS","RHM","Square","TDN", "TDS", "Wooded"),
+                    to = c("BVS","CAB","CAN", "EYS","RHM","SQR","TIN","TIS","WDD"))
+unique(df2$site)
+summary(df2)
+
+unloadNamespace("reshape2")
+unloadNamespace("reshape")
+unloadNamespace("plyr")
+
+df2$Date<-as.Date(df2$Date,format="%m/%d/%Y") #format date
+
+df2$Region<-"CRD"
+
+library(dplyr)
+
+df2a <- df2 %>%
+  group_by(Date, site) %>%
+  summarise(
+    Tmean = round(mean(Temp, na.rm = TRUE), 2),
+    Tmax = round(max(Temp, na.rm = TRUE), 2),
+    Tmin = round(min(Temp, na.rm = TRUE), 2),
+    SD = round(sd(Temp, na.rm = TRUE), 2),
+    Region = unique(Region)
+  )
+
+CR.period<-seq(min(df2$Date, na.rm=T),max(df2$Date, na.rm=T), by="day") #maximum study period across all sites
+CR.df<-data.frame("site"=rep(unique(df2a$site),each=length(CR.period)),"Date"=rep(CR.period, times= length(unique(df2a$site))))
+df2b<-merge(CR.df,df2a, by=c("Date","site"), all.x=T)
+
+df2b$Tmean[df2b$Tmean<0]<-0  #change mean values less than 0 to 0. Tmin will still reflect days when negative values were recorded, indicating air exposure in winter.
+df2b<-subset(df2b, Date >= as.Date("2012-08-01"))
+```
+
+### Create a plot of the Copper River Pond Temperatures through Time
+
+```{r}
+ggplot(df2b, aes(x=Date, y= Tmean))+
+  geom_line()+
+  ylab(expression(paste("Daily mean water temperature ( ", degree ~C, " )")))+
+  scale_x_date(date_breaks="1 year", date_labels = "%Y")+
+  facet_wrap(~site, ncol=3)+
+  ggtitle("Copper River Delta")+
+  theme_minimal()+
+  theme(axis.text.x=element_text(angle=50, vjust=1, hjust=1))
+
+#export plot
+ggsave("CR_water_temps.png", path=plot.folder, width=6, height=6, units="in",dpi=300)
+```
+
+# Part 4 - Finding Monthly Non-Rolling Averages for Water Temp
+
+## Pulling in the data and adding a month-year column
+
+```{r}
+#Yakutat
+df1a$monyr<-format(df1a$Date,"%m-%Y") #add month-year column
+
+df1c <- df1a %>%
+  group_by(site, monyr) %>%
+  summarise(
+    monavg = round(mean(Tmean, na.rm = TRUE), 2),
+    monmax = round(max(Tmax, na.rm = TRUE), 2),
+    monmin = round(min(Tmin, na.rm = TRUE), 2)
+  ) %>%
+  ungroup()
+
+#Cordova
+df2a$monyr<-format(df2a$Date,"%m-%Y") #add mon-year column
+
+df2c <- df2a %>%
+  group_by(site, monyr) %>%
+  summarise(
+    monavg = round(mean(Tmean, na.rm = TRUE), 2),
+    monmax = round(max(Tmax, na.rm = TRUE), 2),
+    monmin = round(min(Tmin, na.rm = TRUE), 2)
+  ) %>%
+  ungroup()
+```
+
+## Merging the Weather Data with Each Region
+
+```{r}
+#merge Yakutat dat with weather dat
+# Subset met3 where Airport is "YAKUTAT AIRPORT"
+YF_subset_met3 <- subset(met3, NAME == "YAKUTAT AIRPORT")
+
+# Perform the left join with subset_met3 as the left data frame
+df1d <- merge(YF_subset_met3, df1c, by = "monyr", all.x = TRUE)
+df1d$Region<-"YF" #restore region column in prep for merge with Copper River data.
+
+# Subset met3 where Airport is "CORDOVA AIRPORT"
+CR_subset_met3 <- subset(met3, NAME == "CORDOVA AIRPORT")
+
+# Perform the left join with subset_met3 as the left data frame
+df2d <- merge(CR_subset_met3, df2c, by = "monyr", all.x = TRUE)
+df2d$Region<-"CR" #restore region column in prep for merge with Copper River data.
+
+```
+
+## Merge the Yakutat Forelands and Copper River Delta Files
+
+I think I can actually skip this and keep these files separate to forecast for CRD and YF separately
+
+```{r}
+#Merge YF and CR dat
+#df3<-rbind(df1d, df2d) 
+#df3$site<-factor(df3$site)
+#df3$NAME<-factor(df3$NAME)
+#df3$Region<-factor(df3$Region)
+#df3$monavg[df3$monavg<0]<-0
+```
+
+# Part 5 - Figuring out how to pivot this file to be wider instead of 'longer'
+
+## Section 1 - Yakutat Forelands
+
+### Set up the file name and check the structure
+
+```{r}
+YF_Data <- df1d
+str(YF_Data)
+```
+
+## Need to make wider by site and change some column names
+
+### Starting with changing column names to be clearer
+
+```{r}
+YF_AirPondData <- YF_Data %>%
+  rename(
+    `Month-Year` = monyr,
+    Pond = site,
+    Water_MonthAvg = monavg,
+    Water_MonthMax = monmax,
+    Water_MonthMin = monmin,
+    Airport = NAME,
+    Air_MonthAvg = Amonavg,
+    Air_MonthMax = Amonmax,
+    Air_MonthMin = Amonmin
+  )
+
+str(YF_AirPondData)
+```
+
+### Pivot the dataframe wider to make a column for each ponds temepratures
+
+```{r}
+YF_PondAirTemp_mean <- YF_AirPondData %>%
+  pivot_wider(
+    id_cols = c("Month-Year", "Airport", "Air_MonthAvg", "Air_MonthMax", "Air_MonthMin", "Region"),
+    names_from = Pond,
+    values_from = c(Water_MonthAvg)
+  )
+
+YF_PondAirTemp_max <- YF_AirPondData %>%
+  pivot_wider(
+    id_cols = c("Month-Year", "Airport", "Air_MonthAvg", "Air_MonthMax", "Air_MonthMin", "Region"),
+    names_from = Pond,
+    values_from = c(Water_MonthMax)
+  )
+
+YF_PondAirTemp_min <- YF_AirPondData %>%
+  pivot_wider(
+    id_cols = c("Month-Year", "Airport", "Air_MonthAvg", "Air_MonthMax", "Air_MonthMin", "Region"),
+    names_from = Pond,
+    values_from = c(Water_MonthMin)
+  )
+```
+
+### Correct the Data formats and order these by date here
+
+```{r}
+# 1. mean values
+str(YF_PondAirTemp_mean)
+  test <- YF_PondAirTemp_mean
+  # pulling out the dates here
+  test$`Month-Year` <- as.yearmon(test$`Month-Year`, "%m-%Y")
+  test$`Month-Year` <- as.Date(as.yearmon(test$`Month-Year`, "%m-%Y"))
+  test <- test %>%
+    rename(Date = `Month-Year`)
+  # save over the Original File
+  YF_PondAirTemp_mean <- test
+  # Sort the dataframe by Date
+  YF_PondAirTemp_mean <- YF_PondAirTemp_mean[order(YF_PondAirTemp_mean$Date), ]
+  # Reset row names
+  rownames(YF_PondAirTemp_mean) <- NULL
+  # check the final file
+  head(YF_PondAirTemp_mean)
+  
+# 2. max values
+str(YF_PondAirTemp_max)
+  test <- YF_PondAirTemp_max
+  # pulling out the dates here
+  test$`Month-Year` <- as.yearmon(test$`Month-Year`, "%m-%Y")
+  test$`Month-Year` <- as.Date(as.yearmon(test$`Month-Year`, "%m-%Y"))
+  test <- test %>%
+    rename(Date = `Month-Year`)
+  # save over the Original File
+  YF_PondAirTemp_max <- test
+  # Sort the dataframe by Date
+  YF_PondAirTemp_max <- YF_PondAirTemp_max[order(YF_PondAirTemp_max$Date), ]
+  # Reset row names
+  rownames(YF_PondAirTemp_max) <- NULL
+  # check the final file
+  head(YF_PondAirTemp_max)
+
+# 3. min values
+str(YF_PondAirTemp_min)
+  test <- YF_PondAirTemp_min
+  # pulling out the dates here
+  test$`Month-Year` <- as.yearmon(test$`Month-Year`, "%m-%Y")
+  test$`Month-Year` <- as.Date(as.yearmon(test$`Month-Year`, "%m-%Y"))
+  test <- test %>%
+    rename(Date = `Month-Year`)
+  # save over the Original File
+  YF_PondAirTemp_min <- test
+  # Sort the dataframe by Date
+  YF_PondAirTemp_min <- YF_PondAirTemp_min[order(YF_PondAirTemp_min$Date), ]
+  # Reset row names
+  rownames(YF_PondAirTemp_min) <- NULL
+  # check the final file
+  head(YF_PondAirTemp_min)
+  
+```
+
+## Section 2 - Copper River Delta
+
+### Set up the file name and check the structure
+
+```{r}
+CR_Data <- df2d
+str(CR_Data)
+```
+
+## Need to make wider by site and change some column names
+
+### Starting with changing column names to be clearer
+
+```{r}
+CR_AirPondData <- CR_Data %>%
+  rename(
+    `Month-Year` = monyr,
+    Pond = site,
+    Water_MonthAvg = monavg,
+    Water_MonthMax = monmax,
+    Water_MonthMin = monmin,
+    Airport = NAME,
+    Air_MonthAvg = Amonavg,
+    Air_MonthMax = Amonmax,
+    Air_MonthMin = Amonmin
+  )
+
+str(CR_AirPondData)
+```
+
+### Pivot the dataframe wider to make a column for each ponds temepratures
+
+```{r}
+CR_PondAirTemp_mean <- CR_AirPondData %>%
+  pivot_wider(
+    id_cols = c("Month-Year", "Airport", "Air_MonthAvg", "Air_MonthMax", "Air_MonthMin", "Region"),
+    names_from = Pond,
+    values_from = c(Water_MonthAvg)
+  )
+
+CR_PondAirTemp_max <- CR_AirPondData %>%
+  pivot_wider(
+    id_cols = c("Month-Year", "Airport", "Air_MonthAvg", "Air_MonthMax", "Air_MonthMin", "Region"),
+    names_from = Pond,
+    values_from = c(Water_MonthMax)
+  )
+
+CR_PondAirTemp_min <- CR_AirPondData %>%
+  pivot_wider(
+    id_cols = c("Month-Year", "Airport", "Air_MonthAvg", "Air_MonthMax", "Air_MonthMin", "Region"),
+    names_from = Pond,
+    values_from = c(Water_MonthMin)
+  )
+```
+
+### Correct the Data formats and order these by date here
+
+```{r}
+# 1. mean values
+str(CR_PondAirTemp_mean)
+  test <- CR_PondAirTemp_mean
+  # pulling out the dates here
+  test$`Month-Year` <- as.yearmon(test$`Month-Year`, "%m-%Y")
+  test$`Month-Year` <- as.Date(as.yearmon(test$`Month-Year`, "%m-%Y"))
+  test <- test %>%
+    rename(Date = `Month-Year`)
+  # save over the Original File
+  CR_PondAirTemp_mean <- test
+  # Sort the dataframe by Date
+  CR_PondAirTemp_mean <- CR_PondAirTemp_mean[order(CR_PondAirTemp_mean$Date), ]
+  # Reset row names
+  rownames(CR_PondAirTemp_mean) <- NULL
+  # check the final file
+  head(CR_PondAirTemp_mean)
+  
+# 2. max values
+str(CR_PondAirTemp_max)
+  test <- CR_PondAirTemp_max
+  # pulling out the dates here
+  test$`Month-Year` <- as.yearmon(test$`Month-Year`, "%m-%Y")
+  test$`Month-Year` <- as.Date(as.yearmon(test$`Month-Year`, "%m-%Y"))
+  test <- test %>%
+    rename(Date = `Month-Year`)
+  # save over the Original File
+  CR_PondAirTemp_max <- test
+  # Sort the dataframe by Date
+  CR_PondAirTemp_max <- CR_PondAirTemp_max[order(CR_PondAirTemp_max$Date), ]
+  # Reset row names
+  rownames(CR_PondAirTemp_max) <- NULL
+  # check the final file
+  head(CR_PondAirTemp_max)
+
+# 3. min values
+str(CR_PondAirTemp_min)
+  test <- CR_PondAirTemp_min
+  # pulling out the dates here
+  test$`Month-Year` <- as.yearmon(test$`Month-Year`, "%m-%Y")
+  test$`Month-Year` <- as.Date(as.yearmon(test$`Month-Year`, "%m-%Y"))
+  test <- test %>%
+    rename(Date = `Month-Year`)
+  # save over the Original File
+  CR_PondAirTemp_min <- test
+  # Sort the dataframe by Date
+  CR_PondAirTemp_min <- CR_PondAirTemp_min[order(CR_PondAirTemp_min$Date), ]
+  # Reset row names
+  rownames(CR_PondAirTemp_min) <- NULL
+  # check the final file
+  head(CR_PondAirTemp_min)
+  
+```
+
+# Part 6 - Adding in a column that is the std of the air temperature in the mean files
+
+AW recommended doing that as std = (max - min)/4
+  AA increased the denominator here because the error for the observed data is way higher than for the forecastsed data
+  
+Copper River Delta
+```{r}
+CR_PondAirTemp_mean
+
+test <- CR_PondAirTemp_mean
+
+test$std <- (test$Air_MonthMax - test$Air_MonthMin)/4
+test$precision <- (1/(test$std^2))
+
+CR_PondAirTemp_mean <- test
+```
+
+Yakutat Forelands
+```{r}
+YF_PondAirTemp_mean
+
+test <- YF_PondAirTemp_mean
+
+test$std <- (test$Air_MonthMax - test$Air_MonthMin)/4
+test$precision <- (1/(test$std^2))
+
+YF_PondAirTemp_mean <- test
+```
+
+# Part 6 - Save the data files as .csv files to be loaded into other code here
+
+```{r}
+write.csv(CR_PondAirTemp_min, file = "DataFiles/CR_PondAirTemp_min.csv")
+write.csv(CR_PondAirTemp_max, file = "DataFiles/CR_PondAirTemp_max.csv")
+write.csv(CR_PondAirTemp_mean, file = "DataFiles/CR_PondAirTemp_mean.csv")
+
+write.csv(YF_PondAirTemp_min, file = "DataFiles/YF_PondAirTemp_min.csv")
+write.csv(YF_PondAirTemp_max, file = "DataFiles/YF_PondAirTemp_max.csv")
+write.csv(YF_PondAirTemp_mean, file = "DataFiles/YF_PondAirTemp_mean.csv")
+```

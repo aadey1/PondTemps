@@ -1,0 +1,3569 @@
+---
+title: "IndividualPondModels_Forecasts85_YF"
+author: "Amaryllis Adey"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Goal of this code is to fit a model to the observational data for each of the ponds in the Yakutat Forelands
+
+# Modeling the Observational Data for the Yakutat Forelands Ponds
+
+Looping through each pond individually because the for loop to do this was more complicated than I could figure out in the time before SFS
+
+# Set up the working space for the analysis
+
+## Load in packages
+
+```{r}
+library(rjags)
+library(daymetr)
+library(ecoforecastR)
+library(dplyr)
+library(lubridate)
+library(zoo)
+library(ggplot2)
+```
+
+## Start by loading in the Yakutat Forelands mean data set
+
+```{r}
+YF_Temps <- read.csv("DataFiles/YF_85Forecast.csv", header=TRUE)
+
+library(dplyr)
+# remove the first column here and change the column for Date to date
+
+YF_Temps <- YF_Temps[,-1]
+head(YF_Temps)
+```
+
+## Separate the data into the air temp and the water temp data
+
+```{r}
+YF_AirTemp <- YF_Temps %>%
+  select(date, Airport, Air_MonthAvg, std, precision, Region)
+
+YF_WaterTemp <- YF_Temps %>%
+  select(date, std, precision, MP1, MP3, PL3, PL2, UBP3, MP5, MP8, UBP1, UBP2, PL1, UBP4)
+```
+
+## Going to attempt to plot the water temperature and the air temperature over time
+
+Looks a bit odd here because it has the 2012-2100 pond temps but only the 2012-2020 water temps
+
+```{r}
+head(YF_Temps)
+
+# # plotting this --> shows up as 'blank'
+# ggplot(YF_Temps)+
+#   geom_line(data = YF_Temps, aes(x = date, y = Air_MonthAvg, color = 'red', linetype = "solid"))+
+#   geom_line(data = YF_Temps, aes(x = date, y = UBP4, color = 'blue', linetype = "dashed"))
+
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# Reshape the data from wide to long format
+YF_Temps_long <- YF_Temps %>%
+  pivot_longer(cols = c(Air_MonthAvg, MP1, MP3, PL3, PL2, UBP3, MP5, MP8, UBP1, UBP2, PL1, UBP4),
+               names_to = "variable",
+               values_to = "value")
+
+# Check the structure of the reshaped data
+str(YF_Temps_long)
+
+# Create the plot
+# Create the plot
+YF_PondTemp <- ggplot(YF_Temps_long, aes(x = as.Date(date), y = value, color = variable)) +
+  geom_line(data = filter(YF_Temps_long, variable == "Air_MonthAvg"), color = "black") +  
+  geom_line(data = filter(YF_Temps_long, variable != "Air_MonthAvg")) +  
+  labs(title = "YF Pond Water Temperature Over Time",
+       x = "Date",
+       y = "Value",
+       color = "Variable") +
+  theme_classic()
+YF_PondTemp
+
+
+# Save the plot
+ggsave("Plots/YF_PondTemp.png", plot = YF_PondTemp, width = 8, height = 6)
+
+```
+
+# Starting the Analysis
+
+## Part 1 - Pulling out the data that we want
+-Linear air-water temperature relationship with only one pond here
+
+# MP1
+
+Here this is set up as just one pond and temperature data
+
+```{r}
+YF_WaterTemp
+
+# Reset row names
+rownames(YF_WaterTemp) <- NULL
+
+# pulling out the dates here
+time <- YF_WaterTemp$date
+length(time)
+
+# Choose one pond to plot through time -- MP1
+y <- YF_WaterTemp$MP1
+length(y)
+
+# Pull out the air temperature from the data
+tempMean <- YF_AirTemp$Air_MonthAvg
+length(tempMean)
+
+tempPrecision <- YF_AirTemp$precision
+length(tempPrecision)
+```
+
+The code itself has three components, the data model, the process model, and the priors.
+
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+
+### Setting up the random walk --\> added in the air temperature here
+
+Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
+
+```{r}
+RandomWalk_Temp = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+  for(t in 2:n){
+    x[t]~dnorm(k[t],tau_add)
+    k[t] <- beta0[1] + beta0[2] * temp[t]
+  }
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  beta0 ~ dmnorm(betap, sigmap)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
+### Next we need to define the data and priors as a list.
+
+```{r}
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, 
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk_Temp),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs", "beta0[1]", "beta0[2]"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(jags.out)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  GraphDataOutputCheck <- merge(ModelOutput, YF_WaterTemp, by = "date", all = T)
+
+# Now you can use this data frame with ggplot2
+MP1ModelPlot <- ggplot(GraphDataOutputCheck) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = MP1)) +
+  ggtitle("MP1 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP1ModelPlot
+
+MP1ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_point(aes(x = date, y = MP1)) +
+  ggtitle("MP1 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP1ModelErrorPlot
+
+MP1ModelMeanPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = MP1)) +
+  ggtitle("MP1 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP1ModelMeanPlot
+
+ggsave("Plots/MP1_85_ModelPlot.jpeg", plot = MP1ModelPlot, width = 8, height = 6)
+ggsave("Plots/MP1_85_ModelErrorPlot.jpeg", plot = MP1ModelErrorPlot, width = 8, height = 6)
+ggsave("Plots/MP1_85_ModelMeanPlot.jpeg", plot = MP1ModelMeanPlot, with = 8, height = 6)
+```
+
+####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
+
+1. 2030s
+```{r}
+# filtering for 2030s
+MP1_2030 <- GraphDataOutputCheck %>%
+  filter(date > "2029-12-01" & date < "2040-01-01")
+
+# Now you can use this data frame with ggplot2
+MP1_2030_ModelPlot <- ggplot(MP1_2030) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = MP1)) +
+  ggtitle("MP1 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP1_2030_ModelPlot
+
+MP1_2030_ModelErrorPlot <- ggplot(MP1_2030, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_point(aes(x = date, y = MP1)) +
+  ggtitle("MP1 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP1_2030_ModelErrorPlot
+
+ggsave("Plots/MP1_2030_85_ModelPlot.jpeg", plot = MP1_2030_ModelPlot, width = 8, height = 6)
+ggsave("Plots/MP1_2030_85_ModelErrorPlot.jpeg", plot = MP1_2030_ModelErrorPlot, width = 8, height = 6)
+```
+
+2. 2060s
+```{r}
+# filtering for 2030s
+MP1_2060 <- GraphDataOutputCheck %>%
+  filter(date > "2059-12-01" & date < "2070-01-01")
+
+# Now you can use this data frame with ggplot2
+MP1_2060_ModelPlot <- ggplot(MP1_2060) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = MP1)) +
+  ggtitle("MP1 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP1_2060_ModelPlot
+
+MP1_2060_ModelErrorPlot <- ggplot(MP1_2060, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = MP1)) +
+  ggtitle("MP1 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP1_2060_ModelErrorPlot
+
+ggsave("Plots/MP1_2060_85_ModelPlot.jpeg", plot = MP1_2060_ModelPlot, width = 8, height = 6)
+ggsave("Plots/MP1_2060_85_ModelErrorPlot.jpeg", plot = MP1_2060_ModelErrorPlot, width = 8, height = 6)
+```
+
+3. 2090s
+```{r}
+# filtering for 2030s
+MP1_2090 <- GraphDataOutputCheck %>%
+  filter(date > "2089-12-01" & date < "2100-01-01")
+
+# Now you can use this data frame with ggplot2
+MP1_2090_ModelPlot <- ggplot(MP1_2090) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = MP1)) +
+  ggtitle("MP1 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP1_2090_ModelPlot
+
+MP1_2090_ModelErrorPlot <- ggplot(MP1_2090, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = MP1)) +
+  ggtitle("MP1 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP1_2090_ModelErrorPlot
+
+ggsave("Plots/MP1_2090_85_ModelPlot.jpeg", plot = MP1_2090_ModelPlot, width = 8, height = 6)
+ggsave("Plots/MP1_2090_85_ModelErrorPlot.jpeg", plot = MP1_2090_ModelErrorPlot, width = 8, height = 6)
+```
+
+# MP3
+
+Here this is set up as just one pond and temperature data
+
+```{r}
+YF_WaterTemp
+
+# Reset row names
+rownames(YF_WaterTemp) <- NULL
+
+# pulling out the dates here
+time <- YF_WaterTemp$date
+length(time)
+
+# Choose one pond to plot through time -- MP3
+y <- YF_WaterTemp$MP3
+length(y)
+
+# Pull out the air temperature from the data
+temp <- YF_AirTemp$Air_MonthAvg
+length(temp)
+```
+
+The code itself has three components, the data model, the process model, and the priors.
+
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+
+### Setting up the random walk --\> added in the air temperature here
+
+Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
+
+```{r}
+RandomWalk_Temp = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+  for(t in 2:n){
+    x[t]~dnorm(k[t],tau_add)
+    k[t] <- beta0[1] + beta0[2] * temp[t]
+  }
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  beta0 ~ dmnorm(betap, sigmap)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
+### Next we need to define the data and priors as a list.
+
+```{r}
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk_Temp),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs", "beta0[1]", "beta0[2]"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(jags.out)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  GraphDataOutputCheck <- merge(ModelOutput, YF_WaterTemp, by = "date", all = T)
+
+# Now you can use this data frame with ggplot2
+MP3ModelPlot <- ggplot(GraphDataOutputCheck) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = MP3)) +
+  ggtitle("MP3 - Yakutat Forelands - RCP 8.5")+
+  ylim(-10,30)+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP3ModelPlot
+
+MP3ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = MP3)) +
+  ggtitle("MP3 - Yakutat Forelands - RCP 8.5")+
+  ylim(-10,30)+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP3ModelErrorPlot
+
+ggsave("Plots/MP3_85_ModelPlot.jpeg", plot = MP3ModelPlot, width = 8, height = 6)
+ggsave("Plots/MP3_85_ModelErrorPlot.jpeg", plot = MP3ModelErrorPlot, width = 8, height = 6)
+```
+
+####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
+
+1. 2030s
+```{r}
+# filtering for 2030s
+MP3_2030 <- GraphDataOutputCheck %>%
+  filter(date > "2029-12-01" & date < "2040-01-01")
+
+# Now you can use this data frame with ggplot2
+MP3_2030_ModelPlot <- ggplot(MP3_2030) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = MP3)) +
+  ggtitle("MP3 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP3_2030_ModelPlot
+
+MP3_2030_ModelErrorPlot <- ggplot(MP3_2030, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = MP3)) +
+  ggtitle("MP3 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP3_2030_ModelErrorPlot
+
+ggsave("Plots/MP3_2030_85_ModelPlot.jpeg", plot = MP3_2030_ModelPlot, width = 8, height = 6)
+ggsave("Plots/MP3_2030_85_ModelErrorPlot.jpeg", plot = MP3_2030_ModelErrorPlot, width = 8, height = 6)
+```
+
+2. 2060s
+```{r}
+# filtering for 2030s
+MP3_2060 <- GraphDataOutputCheck %>%
+  filter(date > "2059-12-01" & date < "2070-01-01")
+
+# Now you can use this data frame with ggplot2
+MP3_2060_ModelPlot <- ggplot(MP3_2060) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = MP1)) +
+  ggtitle("MP3 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP3_2060_ModelPlot
+
+MP3_2060_ModelErrorPlot <- ggplot(MP3_2060, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = MP1)) +
+  ggtitle("MP3 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP3_2060_ModelErrorPlot
+
+ggsave("Plots/MP3_2060_85_ModelPlot.jpeg", plot = MP3_2060_ModelPlot, width = 8, height = 6)
+ggsave("Plots/MP3_2060_85_ModelErrorPlot.jpeg", plot = MP3_2060_ModelErrorPlot, width = 8, height = 6)
+```
+
+3. 2090s
+```{r}
+# filtering for 2030s
+MP3_2090 <- GraphDataOutputCheck %>%
+  filter(date > "2089-12-01" & date < "2100-01-01")
+
+# Now you can use this data frame with ggplot2
+MP3_2090_ModelPlot <- ggplot(MP3_2090) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = MP1)) +
+  ggtitle("MP3 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP3_2090_ModelPlot
+
+MP3_2090_ModelErrorPlot <- ggplot(MP3_2090, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = MP1)) +
+  ggtitle("MP3 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP3_2090_ModelErrorPlot
+
+ggsave("Plots/MP3_2090_85_ModelPlot.jpeg", plot = MP3_2090_ModelPlot, width = 8, height = 6)
+ggsave("Plots/MP3_2090_85_ModelErrorPlot.jpeg", plot = MP3_2090_ModelErrorPlot, width = 8, height = 6)
+```
+
+# MP5
+
+Here this is set up as just one pond and temperature data
+
+```{r}
+YF_WaterTemp
+
+# Reset row names
+rownames(YF_WaterTemp) <- NULL
+
+# pulling out the dates here
+time <- YF_WaterTemp$date
+length(time)
+
+# Choose one pond to plot through time -- MP5
+y <- YF_WaterTemp$MP5
+length(y)
+
+# Pull out the air temperature from the data
+temp <- YF_AirTemp$Air_MonthAvg
+length(temp)
+```
+
+The code itself has three components, the data model, the process model, and the priors.
+
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+
+### Setting up the random walk --\> added in the air temperature here
+
+Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
+
+```{r}
+RandomWalk_Temp = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+  for(t in 2:n){
+    x[t]~dnorm(k[t],tau_add)
+    k[t] <- beta0[1] + beta0[2] * temp[t]
+  }
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  beta0 ~ dmnorm(betap, sigmap)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
+### Next we need to define the data and priors as a list.
+
+```{r}
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk_Temp),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs", "beta0[1]", "beta0[2]"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(jags.out)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  GraphDataOutputCheck <- merge(ModelOutput, YF_WaterTemp, by = "date", all = T)
+
+# Now you can use this data frame with ggplot2
+MP5ModelPlot <- ggplot(GraphDataOutputCheck) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = MP5)) +
+  ggtitle("MP5 - Yakutat Forelands - RCP 8.5")+
+  ylim(-10,30)+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP5ModelPlot
+
+MP5ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = MP5)) +
+  ggtitle("MP5 - Yakutat Forelands - RCP 8.5")+
+  ylim(-10,30)+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP5ModelErrorPlot
+
+ggsave("Plots/MP5_85_ModelPlot.jpeg", plot = MP5ModelPlot, width = 8, height = 6)
+ggsave("Plots/MP5_85_ModelErrorPlot.jpeg", plot = MP5ModelErrorPlot, width = 8, height = 6)
+```
+
+####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
+
+1. 2030s
+```{r}
+# filtering for 2030s
+MP5_2030 <- GraphDataOutputCheck %>%
+  filter(date > "2029-12-01" & date < "2040-01-01")
+
+# Now you can use this data frame with ggplot2
+MP5_2030_ModelPlot <- ggplot(MP5_2030) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = MP5)) +
+  ggtitle("MP5 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP5_2030_ModelPlot
+
+MP5_2030_ModelErrorPlot <- ggplot(MP5_2030, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = MP5)) +
+  ggtitle("MP5 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP5_2030_ModelErrorPlot
+
+ggsave("Plots/MP5_2030_85_ModelPlot.jpeg", plot = MP5_2030_ModelPlot, width = 8, height = 6)
+ggsave("Plots/MP5_2030_85_ModelErrorPlot.jpeg", plot = MP5_2030_ModelErrorPlot, width = 8, height = 6)
+```
+
+2. 2060s
+```{r}
+# filtering for 2030s
+MP5_2060 <- GraphDataOutputCheck %>%
+  filter(date > "2059-12-01" & date < "2070-01-01")
+
+# Now you can use this data frame with ggplot2
+MP5_2060_ModelPlot <- ggplot(MP5_2060) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = MP5)) +
+  ggtitle("MP5 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP5_2060_ModelPlot
+
+MP5_2060_ModelErrorPlot <- ggplot(MP5_2060, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = MP5)) +
+  ggtitle("MP5 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP5_2060_ModelErrorPlot
+
+ggsave("Plots/MP5_2060_85_ModelPlot.jpeg", plot = MP5_2060_ModelPlot, width = 8, height = 6)
+ggsave("Plots/MP5_2060_85_ModelErrorPlot.jpeg", plot = MP5_2060_ModelErrorPlot, width = 8, height = 6)
+```
+
+3. 2090s
+```{r}
+# filtering for 2030s
+MP5_2090 <- GraphDataOutputCheck %>%
+  filter(date > "2089-12-01" & date < "2100-01-01")
+
+# Now you can use this data frame with ggplot2
+MP5_2090_ModelPlot <- ggplot(MP5_2090) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = MP5)) +
+  ggtitle("MP5 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP5_2090_ModelPlot
+
+MP5_2090_ModelErrorPlot <- ggplot(MP5_2090, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = MP1)) +
+  ggtitle("MP5 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP5_2090_ModelErrorPlot
+
+ggsave("Plots/MP5_2090_85_ModelPlot.jpeg", plot = MP5_2090_ModelPlot, width = 8, height = 6)
+ggsave("Plots/MP5_2090_85_ModelErrorPlot.jpeg", plot = MP5_2090_ModelErrorPlot, width = 8, height = 6)
+```
+
+# MP8
+
+Here this is set up as just one pond and temperature data
+
+```{r}
+YF_WaterTemp
+
+# Reset row names
+rownames(YF_WaterTemp) <- NULL
+
+# pulling out the dates here
+time <- YF_WaterTemp$date
+length(time)
+
+# Choose one pond to plot through time -- MP8
+y <- YF_WaterTemp$MP8
+length(y)
+
+# Pull out the air temperature from the data
+temp <- YF_AirTemp$Air_MonthAvg
+length(temp)
+```
+
+The code itself has three components, the data model, the process model, and the priors.
+
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+
+### Setting up the random walk --\> added in the air temperature here
+
+Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
+
+```{r}
+RandomWalk_Temp = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+  for(t in 2:n){
+    x[t]~dnorm(k[t],tau_add)
+    k[t] <- beta0[1] + beta0[2] * temp[t]
+  }
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  beta0 ~ dmnorm(betap, sigmap)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
+### Next we need to define the data and priors as a list.
+
+```{r}
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk_Temp),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs", "beta0[1]", "beta0[2]"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(jags.out)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  GraphDataOutputCheck <- merge(ModelOutput, YF_WaterTemp, by = "date", all = T)
+
+# Now you can use this data frame with ggplot2
+MP8ModelPlot <- ggplot(GraphDataOutputCheck) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = MP8)) +
+  ggtitle("MP8 - Yakutat Forelands - RCP 8.5")+
+  ylim(-10,30)+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP8ModelPlot
+
+MP8ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = MP8)) +
+  ggtitle("MP8 - Yakutat Forelands - RCP 8.5")+
+  ylim(-10,30)+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP8ModelErrorPlot
+
+ggsave("Plots/MP8_85_ModelPlot.jpeg", plot = MP8ModelPlot, width = 8, height = 6)
+ggsave("Plots/MP8_85_ModelErrorPlot.jpeg", plot = MP8ModelErrorPlot, width = 8, height = 6)
+```
+
+####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
+
+1. 2030s
+```{r}
+# filtering for 2030s
+MP8_2030 <- GraphDataOutputCheck %>%
+  filter(date > "2029-12-01" & date < "2040-01-01")
+
+# Now you can use this data frame with ggplot2
+MP8_2030_ModelPlot <- ggplot(MP8_2030) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = MP8)) +
+  ggtitle("MP8 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP8_2030_ModelPlot
+
+MP8_2030_ModelErrorPlot <- ggplot(MP8_2030, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = MP8)) +
+  ggtitle("MP8 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP8_2030_ModelErrorPlot
+
+ggsave("Plots/MP8_2030_85_ModelPlot.jpeg", plot = MP8_2030_ModelPlot, width = 8, height = 6)
+ggsave("Plots/MP8_2030_85_ModelErrorPlot.jpeg", plot = MP8_2030_ModelErrorPlot, width = 8, height = 6)
+```
+
+2. 2060s
+```{r}
+# filtering for 2030s
+MP8_2060 <- GraphDataOutputCheck %>%
+  filter(date > "2059-12-01" & date < "2070-01-01")
+
+# Now you can use this data frame with ggplot2
+MP8_2060_ModelPlot <- ggplot(MP8_2060) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = MP5)) +
+  ggtitle("MP8 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP8_2060_ModelPlot
+
+MP8_2060_ModelErrorPlot <- ggplot(MP8_2060, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = MP8)) +
+  ggtitle("MP8 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP8_2060_ModelErrorPlot
+
+ggsave("Plots/MP8_2060_85_ModelPlot.jpeg", plot = MP8_2060_ModelPlot, width = 8, height = 6)
+ggsave("Plots/MP8_2060_85_ModelErrorPlot.jpeg", plot = MP8_2060_ModelErrorPlot, width = 8, height = 6)
+```
+
+3. 2090s
+```{r}
+# filtering for 2030s
+MP8_2090 <- GraphDataOutputCheck %>%
+  filter(date > "2089-12-01" & date < "2100-01-01")
+
+# Now you can use this data frame with ggplot2
+MP8_2090_ModelPlot <- ggplot(MP8_2090) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = MP8)) +
+  ggtitle("MP8 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP8_2090_ModelPlot
+
+MP8_2090_ModelErrorPlot <- ggplot(MP8_2090, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = MP8)) +
+  ggtitle("MP8 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+MP8_2090_ModelErrorPlot
+
+ggsave("Plots/MP8_2090_85_ModelPlot.jpeg", plot = MP8_2090_ModelPlot, width = 8, height = 6)
+ggsave("Plots/MP8_2090_85_ModelErrorPlot.jpeg", plot = MP8_2090_ModelErrorPlot, width = 8, height = 6)
+```
+
+# PL1
+
+Here this is set up as just one pond and temperature data
+
+```{r}
+YF_WaterTemp
+
+# Reset row names
+rownames(YF_WaterTemp) <- NULL
+
+# pulling out the dates here
+time <- YF_WaterTemp$date
+length(time)
+
+# Choose one pond to plot through time -- PL1
+y <- YF_WaterTemp$PL1
+length(y)
+
+# Pull out the air temperature from the data
+temp <- YF_AirTemp$Air_MonthAvg
+length(temp)
+```
+
+The code itself has three components, the data model, the process model, and the priors.
+
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+
+### Setting up the random walk --\> added in the air temperature here
+
+Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
+
+```{r}
+RandomWalk_Temp = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+  for(t in 2:n){
+    x[t]~dnorm(k[t],tau_add)
+    k[t] <- beta0[1] + beta0[2] * temp[t]
+  }
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  beta0 ~ dmnorm(betap, sigmap)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
+### Next we need to define the data and priors as a list.
+
+```{r}
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk_Temp),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs", "beta0[1]", "beta0[2]"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(jags.out)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  GraphDataOutputCheck <- merge(ModelOutput, YF_WaterTemp, by = "date", all = T)
+
+# Now you can use this data frame with ggplot2
+PL1_85_ModelPlot <- ggplot(GraphDataOutputCheck) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = PL1)) +
+  ggtitle("PL1 - Yakutat Forelands - RCP 8.5")+
+  ylim(-10, 30)+
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL1_85_ModelPlot
+
+PL1_85_ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = PL1)) +
+  ggtitle("PL1 - Yakutat Forelands - RCP 8.5")+
+  ylim(-10,30) +
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL1_85_ModelErrorPlot
+
+ggsave("Plots/PL1_85_ModelPlot.jpeg", plot = PL1_85_ModelPlot, width = 8, height = 6)
+ggsave("Plots/PL1_85_ModelErrorPlot.jpeg", plot = PL1_85_ModelErrorPlot, width = 8, height = 6)
+```
+
+####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
+
+1. 2030s
+```{r}
+# filtering for 2030s
+PL1_2030 <- GraphDataOutputCheck %>%
+  filter(date > "2029-12-01" & date < "2040-01-01")
+
+# Now you can use this data frame with ggplot2
+PL1_2030_ModelPlot <- ggplot(PL1_2030) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = PL1)) +
+  ggtitle("PL1 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL1_2030_ModelPlot
+
+PL1_2030_ModelErrorPlot <- ggplot(PL1_2030, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = PL1)) +
+  ggtitle("PL1 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL1_2030_ModelErrorPlot
+
+ggsave("Plots/PL1_2030_85_ModelPlot.jpeg", plot = PL1_2030_ModelPlot, width = 8, height = 6)
+ggsave("Plots/PL1_2030_85_ModelErrorPlot.jpeg", plot = PL1_2030_ModelErrorPlot, width = 8, height = 6)
+```
+
+2. 2060s
+```{r}
+# filtering for 2030s
+PL1_2060 <- GraphDataOutputCheck %>%
+  filter(date > "2059-12-01" & date < "2070-01-01")
+
+# Now you can use this data frame with ggplot2
+PL1_2060_ModelPlot <- ggplot(PL1_2060) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = PL1)) +
+  ggtitle("PL1 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL1_2060_ModelPlot
+
+PL1_2060_ModelErrorPlot <- ggplot(PL1_2060, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = PL1)) +
+  ggtitle("PL1 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL1_2060_ModelErrorPlot
+
+ggsave("Plots/PL1_2060_85_ModelPlot.jpeg", plot = PL1_2060_ModelPlot, width = 8, height = 6)
+ggsave("Plots/PL1_2060_85_ModelErrorPlot.jpeg", plot = PL1_2060_ModelErrorPlot, width = 8, height = 6)
+```
+
+3. 2090s
+```{r}
+# filtering for 2030s
+PL1_2090 <- GraphDataOutputCheck %>%
+  filter(date > "2089-12-01" & date < "2100-01-01")
+
+# Now you can use this data frame with ggplot2
+PL1_2090_ModelPlot <- ggplot(PL1_2090) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = PL1)) +
+  ggtitle("PL1 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL1_2090_ModelPlot
+
+PL1_2090_ModelErrorPlot <- ggplot(PL1_2090, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = PL1)) +
+  ggtitle("PL1 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL1_2090_ModelErrorPlot
+
+ggsave("Plots/PL1_2090_85_ModelPlot.jpeg", plot = PL1_2090_ModelPlot, width = 8, height = 6)
+ggsave("Plots/PL1_2090_85_ModelErrorPlot.jpeg", plot = PL1_2090_ModelErrorPlot, width = 8, height = 6)
+```
+
+# PL2
+
+Here this is set up as just one pond and temperature data
+
+```{r}
+YF_WaterTemp
+
+# Reset row names
+rownames(YF_WaterTemp) <- NULL
+
+# pulling out the dates here
+time <- YF_WaterTemp$date
+length(time)
+
+# Choose one pond to plot through time -- PL2
+y <- YF_WaterTemp$PL2
+length(y)
+
+# Pull out the air temperature from the data
+temp <- YF_AirTemp$Air_MonthAvg
+length(temp)
+```
+
+The code itself has three components, the data model, the process model, and the priors.
+
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+
+### Setting up the random walk --\> added in the air temperature here
+
+Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
+
+```{r}
+RandomWalk_Temp = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+  for(t in 2:n){
+    x[t]~dnorm(k[t],tau_add)
+    k[t] <- beta0[1] + beta0[2] * temp[t]
+  }
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  beta0 ~ dmnorm(betap, sigmap)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
+### Next we need to define the data and priors as a list.
+
+```{r}
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk_Temp),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs", "beta0[1]", "beta0[2]"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(jags.out)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  GraphDataOutputCheck <- merge(ModelOutput, YF_WaterTemp, by = "date", all = T)
+
+# Now you can use this data frame with ggplot2
+PL2_85_ModelPlot <- ggplot(GraphDataOutputCheck) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = PL2)) +
+  ggtitle("PL2 - Yakutat Forelands - RCP 8.5")+
+  ylim(-10, 30) +
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL2_85_ModelPlot
+
+PL2_85_ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = PL2)) +
+  ggtitle("PL2 - Yakutat Forelands - RCP 8.5")+
+  ylim(-10,30) +
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL2_85_ModelErrorPlot
+
+ggsave("Plots/PL2_85_ModelPlot.jpeg", plot = PL2_85_ModelPlot, width = 8, height = 6)
+ggsave("Plots/PL2_85_ModelErrorPlot.jpeg", plot = PL2_85_ModelErrorPlot, width = 8, height = 6)
+```
+
+####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
+
+1. 2030s
+```{r}
+# filtering for 2030s
+PL2_2030 <- GraphDataOutputCheck %>%
+  filter(date > "2029-12-01" & date < "2040-01-01")
+
+# Now you can use this data frame with ggplot2
+PL2_2030_ModelPlot <- ggplot(PL1_2030) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = PL2)) +
+  ggtitle("PL2 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL2_2030_ModelPlot
+
+PL2_2030_ModelErrorPlot <- ggplot(PL2_2030, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = PL2)) +
+  ggtitle("PL2 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL2_2030_ModelErrorPlot
+
+ggsave("Plots/PL2_2030_85_ModelPlot.jpeg", plot = PL2_2030_ModelPlot, width = 8, height = 6)
+ggsave("Plots/PL2_2030_85_ModelErrorPlot.jpeg", plot = PL2_2030_ModelErrorPlot, width = 8, height = 6)
+```
+
+2. 2060s
+```{r}
+# filtering for 2030s
+PL2_2060 <- GraphDataOutputCheck %>%
+  filter(date > "2059-12-01" & date < "2070-01-01")
+
+# Now you can use this data frame with ggplot2
+PL2_2060_ModelPlot <- ggplot(PL2_2060) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = PL2)) +
+  ggtitle("PL2 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL2_2060_ModelPlot
+
+PL2_2060_ModelErrorPlot <- ggplot(PL2_2060, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = PL2)) +
+  ggtitle("PL2 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL2_2060_ModelErrorPlot
+
+ggsave("Plots/PL2_2060_85_ModelPlot.jpeg", plot = PL2_2060_ModelPlot, width = 8, height = 6)
+ggsave("Plots/PL2_2060_85_ModelErrorPlot.jpeg", plot = PL2_2060_ModelErrorPlot, width = 8, height = 6)
+```
+
+3. 2090s
+```{r}
+# filtering for 2030s
+PL2_2090 <- GraphDataOutputCheck %>%
+  filter(date > "2089-12-01" & date < "2100-01-01")
+
+# Now you can use this data frame with ggplot2
+PL2_2090_ModelPlot <- ggplot(PL2_2090) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = PL2)) +
+  ggtitle("PL2 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL2_2090_ModelPlot
+
+PL2_2090_ModelErrorPlot <- ggplot(PL2_2090, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = PL2)) +
+  ggtitle("PL2 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL2_2090_ModelErrorPlot
+
+ggsave("Plots/PL2_2090_85_ModelPlot.jpeg", plot = PL2_2090_ModelPlot, width = 8, height = 6)
+ggsave("Plots/PL2_2090_85_ModelErrorPlot.jpeg", plot = PL2_2090_ModelErrorPlot, width = 8, height = 6)
+```
+
+# PL3
+
+Here this is set up as just one pond and temperature data
+
+```{r}
+YF_WaterTemp
+
+# Reset row names
+rownames(YF_WaterTemp) <- NULL
+
+# pulling out the dates here
+time <- YF_WaterTemp$date
+length(time)
+
+# Choose one pond to plot through time -- PL3
+y <- YF_WaterTemp$PL3
+length(y)
+
+# Pull out the air temperature from the data
+temp <- YF_AirTemp$Air_MonthAvg
+length(temp)
+```
+
+The code itself has three components, the data model, the process model, and the priors.
+
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+
+### Setting up the random walk --\> added in the air temperature here
+
+Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
+
+```{r}
+RandomWalk_Temp = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+  for(t in 2:n){
+    x[t]~dnorm(k[t],tau_add)
+    k[t] <- beta0[1] + beta0[2] * temp[t]
+  }
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  beta0 ~ dmnorm(betap, sigmap)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
+### Next we need to define the data and priors as a list.
+
+```{r}
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk_Temp),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs", "beta0[1]", "beta0[2]"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(jags.out)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  GraphDataOutputCheck <- merge(ModelOutput, YF_WaterTemp, by = "date", all = T)
+
+# Now you can use this data frame with ggplot2
+PL3_85_ModelPlot <- ggplot(GraphDataOutputCheck) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = PL3)) +
+  ggtitle("PL3 - Yakutat Forelands - RCP 8.5")+
+  ylim(-10,30) +
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL3_85_ModelPlot
+
+PL3_85_ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = PL3)) +
+  ggtitle("PL3 - Yakutat Forelands - RCP 8.5")+
+  ylim(-10,30) +
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL3_85_ModelErrorPlot
+
+ggsave("Plots/PL3_85_ModelPlot.jpeg", plot = PL3_85_ModelPlot, width = 8, height = 6)
+ggsave("Plots/PL3_85_ModelErrorPlot.jpeg", plot = PL3_85_ModelErrorPlot, width = 8, height = 6)
+```
+
+####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
+
+1. 2030s
+```{r}
+# filtering for 2030s
+PL3_2030 <- GraphDataOutputCheck %>%
+  filter(date > "2029-12-01" & date < "2040-01-01")
+
+# Now you can use this data frame with ggplot2
+PL3_2030_ModelPlot <- ggplot(PL3_2030) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = PL3)) +
+  ggtitle("PL3 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL3_2030_ModelPlot
+
+PL3_2030_ModelErrorPlot <- ggplot(PL3_2030, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = PL3)) +
+  ggtitle("PL3 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL3_2030_ModelErrorPlot
+
+ggsave("Plots/PL3_2030_85_ModelPlot.jpeg", plot = PL3_2030_ModelPlot, width = 8, height = 6)
+ggsave("Plots/PL3_2030_85_ModelErrorPlot.jpeg", plot = PL3_2030_ModelErrorPlot, width = 8, height = 6)
+```
+
+2. 2060s
+```{r}
+# filtering for 2030s
+PL3_2060 <- GraphDataOutputCheck %>%
+  filter(date > "2059-12-01" & date < "2070-01-01")
+
+# Now you can use this data frame with ggplot2
+PL3_2060_ModelPlot <- ggplot(PL3_2060) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = PL3)) +
+  ggtitle("PL3 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL3_2060_ModelPlot
+
+PL3_2060_ModelErrorPlot <- ggplot(PL3_2060, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = PL3)) +
+  ggtitle("PL3 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL3_2060_ModelErrorPlot
+
+ggsave("Plots/PL3_2060_85_ModelPlot.jpeg", plot = PL3_2060_ModelPlot, width = 8, height = 6)
+ggsave("Plots/PL3_2060_85_ModelErrorPlot.jpeg", plot = PL3_2060_ModelErrorPlot, width = 8, height = 6)
+```
+
+3. 2090s
+```{r}
+# filtering for 2030s
+PL3_2090 <- GraphDataOutputCheck %>%
+  filter(date > "2089-12-01" & date < "2100-01-01")
+
+# Now you can use this data frame with ggplot2
+PL3_2090_ModelPlot <- ggplot(PL3_2090) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = PL3)) +
+  ggtitle("PL3 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL3_2090_ModelPlot
+
+PL3_2090_ModelErrorPlot <- ggplot(PL3_2090, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = PL3)) +
+  ggtitle("PL3 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+PL3_2090_ModelErrorPlot
+
+ggsave("Plots/PL3_2090_85_ModelPlot.jpeg", plot = PL3_2090_ModelPlot, width = 8, height = 6)
+ggsave("Plots/PL3_2090_85_ModelErrorPlot.jpeg", plot = PL3_2090_ModelErrorPlot, width = 8, height = 6)
+```
+
+# UBP1
+
+Here this is set up as just one pond and temperature data
+
+```{r}
+YF_WaterTemp
+
+# Reset row names
+rownames(YF_WaterTemp) <- NULL
+
+# pulling out the dates here
+time <- YF_WaterTemp$date
+length(time)
+
+# Choose one pond to plot through time -- UBP1
+y <- YF_WaterTemp$UBP1
+length(y)
+
+# Pull out the air temperature from the data
+temp <- YF_AirTemp$Air_MonthAvg
+length(temp)
+```
+
+The code itself has three components, the data model, the process model, and the priors.
+
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+
+### Setting up the random walk --\> added in the air temperature here
+
+Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
+
+```{r}
+RandomWalk_Temp = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+  for(t in 2:n){
+    x[t]~dnorm(k[t],tau_add)
+    k[t] <- beta0[1] + beta0[2] * temp[t]
+  }
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  beta0 ~ dmnorm(betap, sigmap)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
+### Next we need to define the data and priors as a list.
+
+```{r}
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk_Temp),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs", "beta0[1]", "beta0[2]"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(jags.out)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  GraphDataOutputCheck <- merge(ModelOutput, YF_WaterTemp, by = "date", all = T)
+
+# Now you can use this data frame with ggplot2
+UBP1ModelPlot <- ggplot(GraphDataOutputCheck) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = UBP1)) +
+  ggtitle("UBP1 - Yakutat Forelands - RCP 8.5")+
+  ylim(-10,30) +
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP1ModelPlot
+
+UBP1ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = UBP1)) +
+  ggtitle("UBP1- Yakutat Forelands - RCP 8.5")+
+  ylim(-10,30) +
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP1ModelErrorPlot
+
+ggsave("Plots/UBP1_85_ModelPlot.jpeg", plot = UBP1ModelPlot, width = 8, height = 6)
+ggsave("Plots/UBP1_85_ModelErrorPlot.jpeg", plot = UBP1ModelErrorPlot, width = 8, height = 6)
+```
+
+####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
+
+1. 2030s
+```{r}
+# filtering for 2030s
+UBP1_2030 <- GraphDataOutputCheck %>%
+  filter(date > "2029-12-01" & date < "2040-01-01")
+
+# Now you can use this data frame with ggplot2
+UBP1_2030_ModelPlot <- ggplot(UBP1_2030) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = UBP1)) +
+  ggtitle("UBP1 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP1_2030_ModelPlot
+
+UBP1_2030_ModelErrorPlot <- ggplot(UBP1_2030, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = UBP1)) +
+  ggtitle("UBP1 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP1_2030_ModelErrorPlot
+
+ggsave("Plots/UBP1_2030_85_ModelPlot.jpeg", plot = UBP1_2030_ModelPlot, width = 8, height = 6)
+ggsave("Plots/UBP1_2030_85_ModelErrorPlot.jpeg", plot = UBP1_2030_ModelErrorPlot, width = 8, height = 6)
+```
+
+2. 2060s
+```{r}
+# filtering for 2030s
+UBP1_2060 <- GraphDataOutputCheck %>%
+  filter(date > "2059-12-01" & date < "2070-01-01")
+
+# Now you can use this data frame with ggplot2
+UBP1_2060_ModelPlot <- ggplot(UBP1_2060) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = UBP1)) +
+  ggtitle("UBP1 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP1_2060_ModelPlot
+
+UBP1_2060_ModelErrorPlot <- ggplot(UBP1_2060, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = UBP1)) +
+  ggtitle("UBP1 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP1_2060_ModelErrorPlot
+
+ggsave("Plots/UBP1_2060_85_ModelPlot.jpeg", plot = UBP1_2060_ModelPlot, width = 8, height = 6)
+ggsave("Plots/UBP1_2060_85_ModelErrorPlot.jpeg", plot = UBP1_2060_ModelErrorPlot, width = 8, height = 6)
+```
+
+3. 2090s
+```{r}
+# filtering for 2030s
+UBP1_2090 <- GraphDataOutputCheck %>%
+  filter(date > "2089-12-01" & date < "2100-01-01")
+
+# Now you can use this data frame with ggplot2
+UBP1_2090_ModelPlot <- ggplot(UBP1_2090) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = UBP1)) +
+  ggtitle("UBP1 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP1_2090_ModelPlot
+
+UBP1_2090_ModelErrorPlot <- ggplot(UBP1_2090, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = UBP1)) +
+  ggtitle("UBP1 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP1_2090_ModelErrorPlot
+
+ggsave("Plots/UBP1_2090_85_ModelPlot.jpeg", plot = UBP1_2090_ModelPlot, width = 8, height = 6)
+ggsave("Plots/UBP1_2090_85_ModelErrorPlot.jpeg", plot = UBP1_2090_ModelErrorPlot, width = 8, height = 6)
+```
+
+# UBP2
+
+Here this is set up as just one pond and temperature data
+
+```{r}
+YF_WaterTemp
+
+# Reset row names
+rownames(YF_WaterTemp) <- NULL
+
+# pulling out the dates here
+time <- YF_WaterTemp$date
+length(time)
+
+# Choose one pond to plot through time -- UBP2
+y <- YF_WaterTemp$UBP2
+length(y)
+
+# Pull out the air temperature from the data
+temp <- YF_AirTemp$Air_MonthAvg
+length(temp)
+```
+
+The code itself has three components, the data model, the process model, and the priors.
+
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+
+### Setting up the random walk --\> added in the air temperature here
+
+Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
+
+```{r}
+RandomWalk_Temp = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+  for(t in 2:n){
+    x[t]~dnorm(k[t],tau_add)
+    k[t] <- beta0[1] + beta0[2] * temp[t]
+  }
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  beta0 ~ dmnorm(betap, sigmap)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
+### Next we need to define the data and priors as a list.
+
+```{r}
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk_Temp),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs", "beta0[1]", "beta0[2]"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(jags.out)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  GraphDataOutputCheck <- merge(ModelOutput, YF_WaterTemp, by = "date", all = T)
+
+# Now you can use this data frame with ggplot2
+UBP2ModelPlot <- ggplot(GraphDataOutputCheck) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = UBP2)) +
+  ggtitle("UBP2 - Yakutat Forelands - RCP 8.5")+
+  ylim(-10,30) +
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP2ModelPlot
+
+UBP2ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = UBP2)) +
+  ggtitle("UBP2- Yakutat Forelands - RCP 8.5")+
+  ylim(-10,30) +
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP2ModelErrorPlot
+
+ggsave("Plots/UBP2_85_ModelPlot.jpeg", plot = UBP2ModelPlot, width = 8, height = 6)
+ggsave("Plots/UBP2_85_ModelErrorPlot.jpeg", plot = UBP2ModelErrorPlot, width = 8, height = 6)
+```
+
+####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
+
+1. 2030s
+```{r}
+# filtering for 2030s
+UBP2_2030 <- GraphDataOutputCheck %>%
+  filter(date > "2029-12-01" & date < "2040-01-01")
+
+# Now you can use this data frame with ggplot2
+UBP2_2030_ModelPlot <- ggplot(UBP2_2030) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = UBP2)) +
+  ggtitle("UBP2 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP2_2030_ModelPlot
+
+UBP2_2030_ModelErrorPlot <- ggplot(UBP2_2030, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = UBP2)) +
+  ggtitle("UBP2 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP2_2030_ModelErrorPlot
+
+ggsave("Plots/UBP2_2030_85_ModelPlot.jpeg", plot = UBP2_2030_ModelPlot, width = 8, height = 6)
+ggsave("Plots/UBP2_2030_85_ModelErrorPlot.jpeg", plot = UBP2_2030_ModelErrorPlot, width = 8, height = 6)
+```
+
+2. 2060s
+```{r}
+# filtering for 2030s
+UBP2_2060 <- GraphDataOutputCheck %>%
+  filter(date > "2059-12-01" & date < "2070-01-01")
+
+# Now you can use this data frame with ggplot2
+UBP2_2060_ModelPlot <- ggplot(UBP2_2060) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = UBP2)) +
+  ggtitle("UBP2 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP2_2060_ModelPlot
+
+UBP2_2060_ModelErrorPlot <- ggplot(UBP2_2060, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = UBP2)) +
+  ggtitle("UBP2 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP2_2060_ModelErrorPlot
+
+ggsave("Plots/UBP2_2060_85_ModelPlot.jpeg", plot = UBP2_2060_ModelPlot, width = 8, height = 6)
+ggsave("Plots/UBP2_2060_85_ModelErrorPlot.jpeg", plot = UBP2_2060_ModelErrorPlot, width = 8, height = 6)
+```
+
+3. 2090s
+```{r}
+# filtering for 2030s
+UBP2_2090 <- GraphDataOutputCheck %>%
+  filter(date > "2089-12-01" & date < "2100-01-01")
+
+# Now you can use this data frame with ggplot2
+UBP2_2090_ModelPlot <- ggplot(UBP2_2090) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = UBP2)) +
+  ggtitle("UBP2 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP2_2090_ModelPlot
+
+UBP2_2090_ModelErrorPlot <- ggplot(UBP2_2090, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = UBP2)) +
+  ggtitle("UBP2 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP2_2090_ModelErrorPlot
+
+ggsave("Plots/UBP2_2090_85_ModelPlot.jpeg", plot = UBP2_2090_ModelPlot, width = 8, height = 6)
+ggsave("Plots/UBP2_2090_85_ModelErrorPlot.jpeg", plot = UBP2_2090_ModelErrorPlot, width = 8, height = 6)
+```
+
+
+# UBP3
+
+Here this is set up as just one pond and temperature data
+
+```{r}
+YF_WaterTemp
+
+# Reset row names
+rownames(YF_WaterTemp) <- NULL
+
+# pulling out the dates here
+time <- YF_WaterTemp$date
+length(time)
+
+# Choose one pond to plot through time -- UBP3
+y <- YF_WaterTemp$UBP3
+length(y)
+
+# Pull out the air temperature from the data
+temp <- YF_AirTemp$Air_MonthAvg
+length(temp)
+```
+
+The code itself has three components, the data model, the process model, and the priors.
+
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+
+### Setting up the random walk --\> added in the air temperature here
+
+Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
+
+```{r}
+RandomWalk_Temp = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+  for(t in 2:n){
+    x[t]~dnorm(k[t],tau_add)
+    k[t] <- beta0[1] + beta0[2] * temp[t]
+  }
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  beta0 ~ dmnorm(betap, sigmap)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
+### Next we need to define the data and priors as a list.
+
+```{r}
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk_Temp),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs", "beta0[1]", "beta0[2]"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(jags.out)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  GraphDataOutputCheck <- merge(ModelOutput, YF_WaterTemp, by = "date", all = T)
+
+# Now you can use this data frame with ggplot2
+UBP3ModelPlot <- ggplot(GraphDataOutputCheck) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = UBP3)) +
+  ggtitle("UBP3 - Yakutat Forelands - RCP 8.5")+
+  ylim(-10,30) +
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP3ModelPlot
+
+UBP3ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = UBP3)) +
+  ggtitle("UBP3- Yakutat Forelands - RCP 8.5")+
+  ylim(-10,30) +
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP3ModelErrorPlot
+
+ggsave("Plots/UBP3_85_ModelPlot.jpeg", plot = UBP3ModelPlot, width = 8, height = 6)
+ggsave("Plots/UBP3_85_ModelErrorPlot.jpeg", plot = UBP3ModelErrorPlot, width = 8, height = 6)
+```
+
+####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
+
+1. 2030s
+```{r}
+# filtering for 2030s
+UBP3_2030 <- GraphDataOutputCheck %>%
+  filter(date > "2029-12-01" & date < "2040-01-01")
+
+# Now you can use this data frame with ggplot2
+UBP3_2030_ModelPlot <- ggplot(UBP3_2030) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = UBP3)) +
+  ggtitle("UBP3 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP3_2030_ModelPlot
+
+UBP3_2030_ModelErrorPlot <- ggplot(UBP3_2030, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = UBP3)) +
+  ggtitle("UBP3 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP3_2030_ModelErrorPlot
+
+ggsave("Plots/UBP3_2030_85_ModelPlot.jpeg", plot = UBP3_2030_ModelPlot, width = 8, height = 6)
+ggsave("Plots/UBP3_2030_85_ModelErrorPlot.jpeg", plot = UBP3_2030_ModelErrorPlot, width = 8, height = 6)
+```
+
+2. 2060s
+```{r}
+# filtering for 2030s
+UBP3_2060 <- GraphDataOutputCheck %>%
+  filter(date > "2059-12-01" & date < "2070-01-01")
+
+# Now you can use this data frame with ggplot2
+UBP3_2060_ModelPlot <- ggplot(UBP3_2060) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = UBP3)) +
+  ggtitle("UBP3 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP3_2060_ModelPlot
+
+UBP3_2060_ModelErrorPlot <- ggplot(UBP3_2060, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = UBP3)) +
+  ggtitle("UBP3 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP3_2060_ModelErrorPlot
+
+ggsave("Plots/UBP3_2060_85_ModelPlot.jpeg", plot = UBP3_2060_ModelPlot, width = 8, height = 6)
+ggsave("Plots/UBP3_2060_85_ModelErrorPlot.jpeg", plot = UBP3_2060_ModelErrorPlot, width = 8, height = 6)
+```
+
+3. 2090s
+```{r}
+# filtering for 2030s
+UBP3_2090 <- GraphDataOutputCheck %>%
+  filter(date > "2089-12-01" & date < "2100-01-01")
+
+# Now you can use this data frame with ggplot2
+UBP3_2090_ModelPlot <- ggplot(UBP3_2090) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = UBP3)) +
+  ggtitle("UBP3 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP3_2090_ModelPlot
+
+UBP3_2090_ModelErrorPlot <- ggplot(UBP3_2090, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = UBP3)) +
+  ggtitle("UBP3 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP3_2090_ModelErrorPlot
+
+ggsave("Plots/UBP3_2090_85_ModelPlot.jpeg", plot = UBP3_2090_ModelPlot, width = 8, height = 6)
+ggsave("Plots/UBP3_2090_85_ModelErrorPlot.jpeg", plot = UBP3_2090_ModelErrorPlot, width = 8, height = 6)
+```
+
+
+# UBP4
+
+Here this is set up as just one pond and temperature data
+
+```{r}
+YF_WaterTemp
+
+# Reset row names
+rownames(YF_WaterTemp) <- NULL
+
+# pulling out the dates here
+time <- YF_WaterTemp$date
+length(time)
+
+# Choose one pond to plot through time -- UBP4
+y <- YF_WaterTemp$UBP4
+length(y)
+
+# Pull out the air temperature from the data
+temp <- YF_AirTemp$Air_MonthAvg
+length(temp)
+```
+
+The code itself has three components, the data model, the process model, and the priors.
+
+Data Model - relates the observed data, y, at any time point to the latent variable, x. For this example we'll assume that the observation model just consists of Gaussian observation error.
+
+Process Model - relates the state of the system at one point in time to the state one time step ahead. In this case we'll start with the simplest possible process model, a random walk, which just consists of Gaussian process error centered around the current value of the system.
+
+Priors - Finally, for the priors we need to define **priors** for the initial condition, the process error, and the observation error.
+
+### Setting up the random walk --\> added in the air temperature here
+
+Setup Notes -beta0 as a matrix for the intercept and slope -linear relationship between air and water temperature (k = m\*x+b)
+
+```{r}
+RandomWalk_Temp = "
+model{
+  
+  #### Data Model
+  for(t in 1:n){
+    y[t] ~ dnorm(x[t],tau_obs)
+  }
+  
+  #### Process Model
+  for(t in 2:n){
+    x[t]~dnorm(k[t],tau_add)
+    k[t] <- beta0[1] + beta0[2] * temp[t]
+  }
+  
+  #### Priors
+  x[1] ~ dnorm(x_ic,tau_ic)
+  beta0 ~ dmnorm(betap, sigmap)
+  tau_obs ~ dgamma(a_obs,r_obs)
+  tau_add ~ dgamma(a_add,r_add)
+}
+"
+```
+
+### Next we need to define the data and priors as a list.
+
+```{r}
+data <- list(y=y,n=length(y),     ## data
+             x_ic=0,tau_ic=0.2,
+             betap=c(1,1), sigmap=diag(0.0001, 2, 2),
+             temp = temp, ## initial condition prior
+             a_obs=1,r_obs=1,           ## obs error prior
+             a_add=1,r_add=1            ## process error prior
+             )
+```
+
+### Next we need to definite the initial state of the model's parameters for each chain in the MCMC. The overall initialization is stored as a list the same length as the number of chains, where each chain is passed a list of the initial values for each parameter. Unlike the definition of the priors, which had to be done independent of the data, the initialization of the MCMC is allowed (and even encouraged) to use the data. However, each chain should be started from different initial conditions. We handle this below by basing the initial conditions for each chain off of a different random sample of the original data.
+
+AW - take for each pond and have what was originally here with a sample from each pond and take a sample. Then average across ponds for each of these values. Also will indicate the importance between ponds by comparing this versus the average among ponds
+
+```{r}
+nchain = 3
+init <- list()
+for(i in 1:nchain){
+  vect <- c(y)
+  y.samp = sample(vect,length(vect),replace=TRUE)
+  init[[i]] <- list(tau_add=1/var(diff(y.samp)),  ## initial guess on process precision
+                    tau_obs=5/var(y.samp))        ## initial guess on obs precision
+}
+```
+
+### Now that we've defined the model, the data, and the initialization, we need to send all this info to JAGS, which will return the JAGS model object.
+
+```{r}
+j.model   <- jags.model (file = textConnection(RandomWalk_Temp),
+                             data = data,
+                             inits = init,
+                             n.chains = 3)
+```
+
+### Next, given the defined JAGS model, we'll want to take a few samples from the MCMC chain and assess when the model has converged. To take samples from the MCMC object we'll need to tell JAGS what variables to track and how many samples to take.
+
+```{r, fig.asp = 1.0}
+## burn-in
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("tau_add","tau_obs", "beta0[1]", "beta0[2]"),
+                                n.iter = 1000)
+plot(jags.out)
+```
+
+
+### Since rjags returns the samples as a CODA object, we can use any of the diagnostics in the R *coda* library to test for convergence, summarize the output, or visualize the chains.
+
+Now that the model has converged we'll want to take a much larger sample from the MCMC and include the full vector of X's in the output
+
+```{r}
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("x","tau_add","tau_obs", "beta0"),
+                                n.iter = 10000)
+```
+
+### Given the full joint posterior samples, we're next going to visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's. To do so we'll convert the coda output into a matrix and then calculate the quantiles. Looking at colnames(out) will show you that the first two columns are `tau_add` and `tau_obs`, so we calculate the CI starting from the 3rd column. We also transform the samples back from the log domain to the linear domain.
+
+```{r}
+# THIS CODE DOES NOT WORK -- NEXT CHUNK IS TRYING TO GET THESE SAME PLOTS TO WORK
+time                               ## adjust to zoom in and out
+time <-as.Date(time)
+out <- as.matrix(jags.out)         ## convert from coda to matrix
+x.cols <- grep("^x",colnames(out)) ## grab all columns that start with the letter x
+ci <- apply(out[,x.cols], 2, quantile, c(0.025,0.5,0.975))
+
+# changing ci to a dataframe so that it can be plotted
+  # Load necessary libraries
+  library(tidyverse)
+  
+  # Assuming `ci` is your matrix
+  ci_df <- as.data.frame(ci)
+  names(ci_df) <- time
+
+  # Transpose the dataframe
+  ci_transposed <- as.data.frame(t(ci_df))
+
+  # Change the dates to be a column
+  ci_transposed <- rownames_to_column(ci_transposed, var = "date")
+  ci_transposed$date <- as.Date(ci_transposed$date)
+  
+  ModelOutput <- ci_transposed
+  
+  GraphDataOutputCheck <- merge(ModelOutput, YF_WaterTemp, by = "date", all = T)
+
+# Now you can use this data frame with ggplot2
+UBP4ModelPlot <- ggplot(GraphDataOutputCheck) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = UBP4)) +
+  ggtitle("UBP4 - Yakutat Forelands - RCP 8.5")+
+  ylim(-10,30) +
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP4ModelPlot
+
+UBP4ModelErrorPlot <- ggplot(GraphDataOutputCheck, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = UBP4)) +
+  ggtitle("UBP4 - Yakutat Forelands - RCP 8.5")+
+  ylim(-10,30) +
+  ylab("Temeprature (C)") +
+  xlab("Date") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP4ModelErrorPlot
+
+ggsave("Plots/UBP4_85_ModelPlot.jpeg", plot = UBP4ModelPlot, width = 8, height = 6)
+ggsave("Plots/UBP4_85_ModelErrorPlot.jpeg", plot = UBP4ModelErrorPlot, width = 8, height = 6)
+```
+
+####  Adding code here so that we can zoom in on a few decades: 2030s, 2060s, 2090s
+
+1. 2030s
+```{r}
+# filtering for 2030s
+UBP4_2030 <- GraphDataOutputCheck %>%
+  filter(date > "2029-12-01" & date < "2040-01-01")
+
+# Now you can use this data frame with ggplot2
+UBP4_2030_ModelPlot <- ggplot(UBP4_2030) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = UBP4)) +
+  ggtitle("UBP4 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP4_2030_ModelPlot
+
+UBP4_2030_ModelErrorPlot <- ggplot(UBP4_2030, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = UBP4)) +
+  ggtitle("UBP4 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP4_2030_ModelErrorPlot
+
+ggsave("Plots/UBP4_2030_85_ModelPlot.jpeg", plot = UBP4_2030_ModelPlot, width = 8, height = 6)
+ggsave("Plots/UBP4_2030_85_ModelErrorPlot.jpeg", plot = UBP4_2030_ModelErrorPlot, width = 8, height = 6)
+```
+
+2. 2060s
+```{r}
+# filtering for 2030s
+UBP4_2060 <- GraphDataOutputCheck %>%
+  filter(date > "2059-12-01" & date < "2070-01-01")
+
+# Now you can use this data frame with ggplot2
+UBP4_2060_ModelPlot <- ggplot(UBP4_2060) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = UBP4)) +
+  ggtitle("UBP4 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP4_2060_ModelPlot
+
+UBP4_2060_ModelErrorPlot <- ggplot(UBP4_2060, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = UBP4)) +
+  ggtitle("UBP4 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP4_2060_ModelErrorPlot
+
+ggsave("Plots/UBP4_2060_85_ModelPlot.jpeg", plot = UBP4_2060_ModelPlot, width = 8, height = 6)
+ggsave("Plots/UBP4_2060_85_ModelErrorPlot.jpeg", plot = UBP4_2060_ModelErrorPlot, width = 8, height = 6)
+```
+
+3. 2090s
+```{r}
+# filtering for 2030s
+UBP4_2090 <- GraphDataOutputCheck %>%
+  filter(date > "2089-12-01" & date < "2100-01-01")
+
+# Now you can use this data frame with ggplot2
+UBP4_2090_ModelPlot <- ggplot(UBP4_2090) +
+  geom_line(aes(x = date, y = `50%`)) +
+  geom_line(aes(x = date, y = `2.5%`)) +
+  geom_line(aes(x = date, y = `97.5%`)) +
+  geom_point(aes(x = date, y = UBP4)) +
+  ggtitle("UBP4 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP4_2090_ModelPlot
+
+UBP4_2090_ModelErrorPlot <- ggplot(UBP4_2090, mapping = aes(date)) +
+  geom_line(mapping = aes(y = `2.5%`)) +
+  geom_line(mapping = aes(y = `97.5%`)) +
+  geom_ribbon(mapping = aes(ymin = `2.5%`, ymax = `97.5%`), fill = "lightgrey") +
+  geom_line(aes(x = date, y = `50%`), color = "black") +
+  geom_point(aes(x = date, y = UBP4)) +
+  ggtitle("UBP4 - Yakutat Forelands - RCP 8.5")+
+  ylim(c(-10, 30))+
+  ylab("Temeprature (C)") +
+  xlab("Year") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+UBP4_2090_ModelErrorPlot
+
+ggsave("Plots/UBP4_2090_85_ModelPlot.jpeg", plot = UBP4_2090_ModelPlot, width = 8, height = 6)
+ggsave("Plots/UBP4_2090_85_ModelErrorPlot.jpeg", plot = UBP4_2090_ModelErrorPlot, width = 8, height = 6)
+```
+# Graphing these
+
+## Attempting graphs as one output
+
+### Mean
+
+#### 2030
+
+```{r}
+YF_85_2030 <- MP1_2030[0,]
+str(YF_85_2030)
+
+YF_85_2030 <- YF_85_2030 %>%
+  select(date, MP1, MP3, MP5, MP8, PL1, PL2, PL3, UBP1, UBP2, UBP3, UBP4) %>%
+  rename(MP1_mean = MP1) %>%
+  rename(MP3_mean = MP3) %>%
+  rename(MP5_mean = MP5) %>%
+  rename(MP8_mean = MP8) %>%
+  rename(PL1_mean = PL1) %>%
+  rename(PL2_mean = PL2) %>%
+  rename(PL3_mean = PL3) %>%
+  rename(UBP1_mean = UBP1) %>%
+  rename(UBP2_mean = UBP2) %>%
+  rename(UBP3_mean = UBP3) %>%
+  rename(UBP4_mean = UBP4)
+str(YF_85_2030)
+
+attr(YF_85_2030, 'row.names') <- 1:nrow(MP1_2030)
+
+test <- YF_85_2030
+
+test$date <- MP1_2030$date
+test$MP1_mean <- MP1_2030$`50%`
+test$MP3_mean <- MP3_2030$`50%`
+test$MP5_mean <- MP5_2030$`50%`
+test$MP8_mean <- MP8_2030$`50%`
+test$PL1_mean <- PL1_2030$`50%`
+test$PL2_mean <- PL2_2030$`50%`
+test$PL3_mean <- PL3_2030$`50%`
+test$UBP1_mean <- UBP1_2030$`50%`
+test$UBP2_mean <- UBP2_2030$`50%`
+test$UBP3_mean <- UBP3_2030$`50%`
+test$UBP4_mean <- UBP4_2030$`50%`
+
+str(test)
+
+YF_85_2030 <- test
+
+# pivoPL3g this longer so there is one column for mean here library(tidyr)
+# Assuming your dataframe is named 'test'
+test_long <- pivot_longer(YF_85_2030, cols = -date, names_to = "Location", values_to = "Mean2030_Temp")
+
+# Preview the pivoted data
+head(test_long)
+str(test_long)
+
+YFD_Mean_long<- test_long
+str(YFD_Mean_long)
+
+rm(test, test_long)
+```
+#### 2060
+
+```{r}
+
+YF_85_2060 <- MP1_2060[0,]
+str(YF_85_2060)
+
+YF_85_2060 <- YF_85_2060 %>%
+  select(date, MP1, MP3, MP5, MP8, PL1, PL2, PL3, UBP1, UBP2, UBP3, UBP4) %>%
+  rename(MP1_mean = MP1) %>%
+  rename(MP3_mean = MP3) %>%
+  rename(MP5_mean = MP5) %>%
+  rename(MP8_mean = MP8) %>%
+  rename(PL1_mean = PL1) %>%
+  rename(PL2_mean = PL2) %>%
+  rename(PL3_mean = PL3) %>%
+  rename(UBP1_mean = UBP1) %>%
+  rename(UBP2_mean = UBP2) %>%
+  rename(UBP3_mean = UBP3) %>%
+  rename(UBP4_mean = UBP4)
+str(YF_85_2060)
+
+attr(YF_85_2060, 'row.names') <- 1:nrow(MP1_2030)
+
+test <- YF_85_2060
+
+test$date <- MP1_2060$date
+test$MP1_mean <- MP1_2060$`50%`
+test$MP3_mean <- MP3_2060$`50%`
+test$MP5_mean <- MP5_2060$`50%`
+test$MP8_mean <- MP8_2060$`50%`
+test$PL1_mean <- PL1_2060$`50%`
+test$PL2_mean <- PL2_2060$`50%`
+test$PL3_mean <- PL3_2060$`50%`
+test$UBP1_mean <- UBP1_2060$`50%`
+test$UBP2_mean <- UBP2_2060$`50%`
+test$UBP3_mean <- UBP3_2060$`50%`
+test$UBP4_mean <- UBP4_2060$`50%`
+
+str(test)
+
+YF_85_2060 <- test
+
+# pivoPL3g this longer so there is one column for mean here library(tidyr)
+# Assuming your dataframe is named 'test'
+test_long <- pivot_longer(YF_85_2060, cols = -date, names_to = "Location", values_to = "Mean2060_Temp")
+
+# Preview the pivoted data
+head(test_long)
+str(test_long)
+
+YFD_Mean_long$Mean2060_Temp <- test_long$Mean2060_Temp
+str(YFD_Mean_long)
+
+rm(test, test_long)
+```
+
+#### 2090
+
+```{r}
+
+YF_85_2090 <- MP1_2090[0,]
+str(YF_85_2090)
+
+YF_85_2090 <- YF_85_2090 %>%
+  select(date, MP1, MP3, MP5, MP8, PL1, PL2, PL3, UBP1, UBP2, UBP3, UBP4) %>%
+  rename(MP1_mean = MP1) %>%
+  rename(MP3_mean = MP3) %>%
+  rename(MP5_mean = MP5) %>%
+  rename(MP8_mean = MP8) %>%
+  rename(PL1_mean = PL1) %>%
+  rename(PL2_mean = PL2) %>%
+  rename(PL3_mean = PL3) %>%
+  rename(UBP1_mean = UBP1) %>%
+  rename(UBP2_mean = UBP2) %>%
+  rename(UBP3_mean = UBP3) %>%
+  rename(UBP4_mean = UBP4)
+str(YF_85_2090)
+
+attr(YF_85_2090, 'row.names') <- 1:nrow(MP1_2090)
+
+test <- YF_85_2090
+
+test$date <- MP1_2090$date
+test$MP1_mean <- MP1_2090$`50%`
+test$MP3_mean <- MP3_2090$`50%`
+test$MP5_mean <- MP5_2090$`50%`
+test$MP8_mean <- MP8_2090$`50%`
+test$PL1_mean <- PL1_2090$`50%`
+test$PL2_mean <- PL2_2090$`50%`
+test$PL3_mean <- PL3_2090$`50%`
+test$UBP1_mean <- UBP1_2090$`50%`
+test$UBP2_mean <- UBP2_2090$`50%`
+test$UBP3_mean <- UBP3_2090$`50%`
+test$UBP4_mean <- UBP4_2090$`50%`
+
+str(test)
+
+YF_85_2090 <- test
+
+# pivoPL3g this longer so there is one column for mean here library(tidyr)
+# Assuming your dataframe is named 'test'
+test_long <- pivot_longer(YF_85_2090, cols = -date, names_to = "Location", values_to = "Mean2090_Temp")
+
+# Preview the pivoted data
+head(test_long)
+str(test_long)
+
+YFD_Mean_long$Mean2090_Temp <- test_long$Mean2090_Temp
+str(YFD_Mean_long)
+
+rm(test, test_long)
+```
+
+####GetPL3g monthly stats
+
+```{r}
+# Assuming your dataframe is named 'YFD_Mean_long'
+monthly_stats <- YFD_Mean_long %>%
+  mutate(Month = format(date, "%m")) %>%
+  group_by(Month) %>%
+  summarize(
+    Mean2030 = mean(Mean2030_Temp),
+    Std2030 = sd(Mean2030_Temp),
+    Mean2060 = mean(Mean2060_Temp),
+    Std2060 = sd(Mean2060_Temp),
+    Mean2090 = mean(Mean2090_Temp),
+    Std2090 = sd(Mean2090_Temp)
+  )
+
+# Preview the resulPL3g dataframe
+str(monthly_stats)
+
+# Reshape the tibble
+monthly_stats_long <- monthly_stats %>%
+  pivot_longer(cols = -Month, 
+               names_to = c(".value", "year"), 
+               names_sep = "(?<=[A-Za-z])(?=[0-9])")
+
+# Print the reshaped tibble
+print(monthly_stats_long)
+
+ggplot(data = monthly_stats_long, aes(x = Month, y = Mean, fill = year))+
+  geom_col(position = "dodge")
+
+YFD_85_Mean <- ggplot(data = monthly_stats_long, aes(x = Month, y = Mean, fill = year)) +
+  geom_col(position = "dodge") +
+  geom_errorbar(aes(ymin = Mean - Std, ymax = Mean + Std), 
+                position = "dodge") +
+  ggtitle("Yakutat Forelands RCP 8.5") +
+  ylim(-5, 25)+
+  labs(fill = "Year") +
+  theme_bw() +
+  theme(legend.text = element_text(size = 14), legend.title = element_text(size = 15),
+        axis.text = element_text(size = 12), axis.title = element_text(size = 13),
+        title = element_text(size = 14), plot.title = element_text(hjust = 0.5))
+YFD_85_Mean
+
+ggsave("Plots/YF_85_Mean.jpeg", plot = YFD_85_Mean, width = 9, height = 6)
+```
+
+
+
+
+
+

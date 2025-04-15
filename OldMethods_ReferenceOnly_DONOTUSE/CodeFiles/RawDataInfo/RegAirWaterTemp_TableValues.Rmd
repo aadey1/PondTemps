@@ -1,0 +1,256 @@
+---
+title: "RegAirWaterTemp"
+author: "Amaryllis Adey"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load in the CR dataset 
+```{r}
+CR_Temps <- read.csv("BiasCorrection/DataFiles/CR_45SNAPForecast_MonCorr.csv", header=TRUE)
+
+library(dplyr)
+# remove the first column here and change the column for Date to date
+
+CR_Temps <- CR_Temps[,-1]
+head(CR_Temps)
+
+obsData <- CR_Temps %>%
+  filter(date < "2021-01-01")
+
+```
+
+Fitting the models for each of the ponds
+```{r}
+# Fit the linear model with the filtered data
+lm1_positive <- lm(BVS ~ Air_MonthAvg, data = obsData)
+
+# Summarize the results
+summary(lm1_positive)
+```
+
+```{r}
+# CAB
+lm2 <- lm(obsData$CAB ~ obsData$Air_MonthAvg)
+summary(lm2)
+
+```
+
+```{r}
+# CAN
+lm3 <- lm(obsData$CAN ~ obsData$Air_MonthAvg)
+summary(lm3)
+
+```
+
+
+```{r}
+# EYS
+lm4 <- lm(obsData$EYS ~ obsData$Air_MonthAvg)
+summary(lm4)
+
+```
+
+```{r}
+# RHM
+lm5 <- lm(obsData$RHM ~ obsData$Air_MonthAvg)
+summary(lm5)
+
+```
+
+```{r}
+# RHM
+lm6 <- lm(obsData$SQR ~ obsData$Air_MonthAvg)
+summary(lm6)
+
+```
+
+```{r}
+# RHM
+lm7 <- lm(obsData$TIN ~ obsData$Air_MonthAvg)
+summary(lm7)
+
+```
+
+```{r}
+# RHM
+lm8 <- lm(obsData$TIS ~ obsData$Air_MonthAvg)
+summary(lm5)
+
+```
+
+```{r}
+# RHM
+lm9 <- lm(obsData$WDD~ obsData$Air_MonthAvg)
+summary(lm9)
+
+```
+
+Make a plot of each pond here
+
+```{r}
+library(ggplot2)
+library(tidyr)
+
+# Convert the data to long format for water temperature variables
+obsData_long <- obsData %>%
+  pivot_longer(cols = c(BVS, CAB, CAN, EYS, RHM, SQR, TIN, TIS, WDD),
+               names_to = "pond",
+               values_to = "Water_Temp")
+
+# Create the plot faceted by pond with custom sizes for title, labels, and ticks
+CRD <- ggplot(obsData_long, aes(x = Air_MonthAvg, y = Water_Temp)) +
+  geom_point(color = "grey") +
+  geom_smooth(method = "lm", color = "black", se = FALSE) +  # Add a single black trend line
+  geom_vline(xintercept = 0, color = "darkgrey", size = 0.3, linetype = "dashed") +  # Thin grey vertical line at x = 0
+  geom_hline(yintercept = 0, color = "darkgrey", size = 0.3, linetype = "dashed") + # Thin grey horizontal line at y = 0
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dotted", size = 0.6) +  # 1:1 red dotted line
+  theme_classic() +
+  labs(x = "Air Temperature (°C)",
+       y = "Water Temperature (°C)",
+       title = "Copper River Delta") +
+  facet_wrap(~pond) +
+  theme(
+    legend.position = "none",  # Remove legend
+    plot.title = element_text(hjust = 0.5, size = 20),  # Title size
+    axis.title = element_text(size = 16),  # Axis labels size
+    axis.text = element_text(size = 12),  # Tick mark size
+    strip.text = element_text(size = 16),  # Facet label size
+    plot.title.position = "plot"  # Position title at the top of the plot
+  )
+CRD
+
+ggsave("BiasCorrection/Plots/CRD_RegressionAW.jpeg", plot = CRD, width = 8, height = 6)
+
+```
+
+
+# Load in the YF dataset 
+```{r}
+YF_Temps <- read.csv("BiasCorrection/DataFiles/YF_45SNAPForecast_MonCorr.csv", header=TRUE)
+
+library(dplyr)
+# remove the first column here and change the column for Date to date
+
+YF_Temps <- YF_Temps[,-1]
+head(YF_Temps)
+
+obsData <- YF_Temps %>%
+  filter(date < "2021-01-01")
+obsData
+
+```
+
+```{r}
+# RHM
+lm1 <- lm(obsData$MP1 ~ obsData$Air_MonthAvg)
+summary(lm1)
+
+```
+
+```{r}
+# RHM
+lm2 <- lm(obsData$MP3 ~ obsData$Air_MonthAvg)
+summary(lm2)
+
+```
+
+```{r}
+# RHM
+lm3 <- lm(obsData$MP5~ obsData$Air_MonthAvg)
+summary(lm3)
+
+```
+
+```{r}
+# RHM
+lm4 <- lm(obsData$MP8~ obsData$Air_MonthAvg)
+summary(lm4)
+
+```
+
+```{r}
+# RHM
+lm5 <- lm(obsData$PL1~ obsData$Air_MonthAvg)
+summary(lm5)
+
+```
+
+```{r}
+# RHM
+lm6 <- lm(obsData$PL2~ obsData$Air_MonthAvg)
+summary(lm6)
+
+```
+
+```{r}
+# RHM
+lm7 <- lm(obsData$PL3~ obsData$Air_MonthAvg)
+summary(lm7)
+
+```
+
+```{r}
+# RHM
+lm8 <- lm(obsData$UBP1~ obsData$Air_MonthAvg)
+summary(lm8)
+
+```
+
+```{r}
+# RHM
+lm9 <- lm(obsData$UBP2~ obsData$Air_MonthAvg)
+summary(lm9)
+
+```
+
+```{r}
+# RHM
+lm10 <- lm(obsData$UBP3~ obsData$Air_MonthAvg)
+summary(lm10)
+```
+
+```{r}
+# RHM
+lm11 <- lm(obsData$UBP4~ obsData$Air_MonthAvg)
+summary(lm11)
+```
+
+```{r}
+library(ggplot2)
+library(tidyr)
+
+# Convert the data to long format for water temperature variables
+obsData_long <- obsData %>%
+  pivot_longer(cols = c(MP1, MP3, MP5, MP8, PL1, PL2, PL3, UBP1, UBP2, UBP3, UBP4),
+               names_to = "pond",
+               values_to = "Water_Temp")
+
+# Create the plot faceted by pond with custom sizes for title, labels, and ticks
+YF <- ggplot(obsData_long, aes(x = Air_MonthAvg, y = Water_Temp)) +
+  geom_point(color = "grey") +
+  geom_smooth(method = "lm", color = "black", se = FALSE) +  # Add a single black trend line
+  geom_vline(xintercept = 0, color = "darkgrey", size = 0.3, linetype = "dashed") +  # Thin grey vertical line at x = 0
+  geom_hline(yintercept = 0, color = "darkgrey", size = 0.3, linetype = "dashed") + # Thin grey horizontal line at y = 0
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dotted", size = 0.6) +  # 1:1 red dotted line
+  theme_classic() +
+  labs(x = "Air Temperature (°C)",
+       y = "Water Temperature (°C)",
+       title = "Yakutat Forelands") +
+  facet_wrap(~pond) +
+  theme(
+    legend.position = "none",  # Remove legend
+    plot.title = element_text(hjust = 0.5, size = 20),  # Title size
+    axis.title = element_text(size = 16),  # Axis labels size
+    axis.text = element_text(size = 12),  # Tick mark size
+    strip.text = element_text(size = 16),  # Facet label size
+    plot.title.position = "plot"  # Position title at the top of the plot
+  )
+YF
+
+ggsave("BiasCorrection/Plots/YF_RegressionAW.jpeg", plot = CRD, width = 8, height = 6)
+```
