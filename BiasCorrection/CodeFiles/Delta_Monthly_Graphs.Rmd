@@ -280,7 +280,7 @@ Panel Plot
 ```{r}
 MonthlyStatsCRD <- ggarrange(MonthlyStatsCRD_2030Plot, MonthlyStatsCRD_2060Plot, MonthlyStatsCRD_2090Plot, ncol = 3)
 MonthlyStatsCRD
-ggsave("Corr_DeltaMonthCRD.png", plot = MonthlyStatsCRD, width = 12, height = 3)
+ggsave("Corr_DeltaMonthCRD_0.png", plot = MonthlyStatsCRD, width = 12, height = 3)
 ```
 
 ### Moving on to YF
@@ -560,7 +560,7 @@ MonthlyStatsYF <- ggarrange(
 )
 
 # Save the combined plo
-ggsave("Corr_DeltaMonthYF.png", plot = MonthlyStatsYF, width = 12, height = 4)
+ggsave("Corr_DeltaMonthYF_0.png", plot = MonthlyStatsYF, width = 12, height = 4)
 
 ```
 
@@ -601,6 +601,6 @@ combined_plot <- ggarrange(
 combined_plot
 
 # Save the combined plot
-ggsave("Corr_DeltaMonth_Combined.png", combined_plot, width = 15, height = 10)
+ggsave("Corr_DeltaMonth_Combined_0.png", combined_plot, width = 15, height = 10)
 
 ```
