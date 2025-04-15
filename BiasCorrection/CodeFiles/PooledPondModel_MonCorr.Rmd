@@ -73,7 +73,8 @@ Xf[t] ~ dnorm(muAirTemp[t], tauAirTemp[t]) # Latent air temperature is drawn fro
 for(t in 2:n){ # loop over all time steps except teh first (we defined ic above)
 for(p in 1:np){
 mu[t,p] <- x[t-1,p] + int[p] + beta[1] * x[t-1,p] + beta[2] * Xf[t] # Mean water temperature is a function of the previous time step and current air temperature
-x[t,p] ~ dnorm(mu[t,p], tau_add) # Latent water temperature is drawn from mean water temperature with process uncertainty
+mu1[t,p] <- ifelse(mu[t,p] < 0, 0, mu[t,p])
+x[t,p] ~ dnorm(mu1[t,p], tau_add) # Latent water temperature is drawn from mean water temperature with process uncertainty
 }
 }
 }
@@ -368,7 +369,7 @@ Creating some nice plots of these
 # set up the colors here for the plots below so that each pond has the same color each time
 Mod_CRD45 <- out_obs_mapped
 str(Mod_CRD45)
-write.csv(Mod_CRD45, "Corr_Mod_CRD45.csv")
+write.csv(Mod_CRD45, "Corr_Mod_CRD45_0.csv")
 
 # Define the custom color palette
 CR_colors <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "lightblue")
@@ -514,7 +515,7 @@ Then separate the data into air and water temperature files
 
 ```{r}
 # Air and water temperature data: CR location, 4.5 scenario
-CR_Temps <- read.csv("CR_85SNAPForecast_MonCorr.csv", header=TRUE)
+CR_Temps <- read.csv("BiasCorrection/DataFiles/CR_85SNAPForecast_MonCorr.csv", header=TRUE)
 
 # Air temperature variables
 CR_AirTemp85 <- CR_Temps %>%
@@ -561,6 +562,7 @@ Xf[t] ~ dnorm(muAirTemp[t], tauAirTemp[t]) # Latent air temperature is drawn fro
 for(t in 2:n){ # loop over all time steps except teh first (we defined ic above)
 for(p in 1:np){
 mu[t,p] <- x[t-1,p] + int[p] + beta[1] * x[t-1,p] + beta[2] * Xf[t] # Mean water temperature is a function of the previous time step and current air temperature
+mu1[t,p] <- ifelse(mu[t,p] < 0, 0, mu[t,p])
 x[t,p] ~ dnorm(mu[t,p], tau_add) # Latent water temperature is drawn from mean water temperature with process uncertainty
 }
 }
@@ -693,33 +695,6 @@ ggplot(pond_slopes_summary, aes(x = pond_name, y = mean_slope, ymin = lower_CI, 
 
 ```
 
-Combine and Label Results
-
-```{r}
-# Add pond names to the summaries
-ponds <- as.data.frame(colnames(CR_WaterTemp85[-1]))
-colnames(ponds) <- "pond_name"
-ponds$pond <- 1:nrow(ponds)
-
-beta_summary <- beta_summary |>
-  dplyr::left_join(ponds, by = "pond")
-
-int_summary <- int_summary |>
-  dplyr::left_join(ponds, by = "pond")
-
-# Combine slopes and intercepts into one data frame
-model_summary <- dplyr::left_join(beta_summary, int_summary, by = "pond_name", suffix = c("_slope", "_intercept"))
-
-# View the combined summary
-print(model_summary)
-
-```
-
-Save the results
-
-```{r}
-write.csv(model_summary, "CRD85_pond_slopes_intercepts_summary.csv", row.names = FALSE)
-```
 
 Visualize the output by just looking at the **95% credible interval of the time-series of X's** and compare that to the observed Y's
 
@@ -881,7 +856,7 @@ Creating some nice plots of these
 # set up the colors here for the plots below so that each pond has the same color each time
 Mod_CRD85 <- out_obs_mapped
 str(Mod_CRD85)
-write.csv(Mod_CRD85, "Corr_Mod_CRD85.csv")
+write.csv(Mod_CRD85, "Corr_Mod_CRD85_0.csv")
 
 # Define the custom color palette
 CR_colors <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "lightblue")
@@ -1090,7 +1065,7 @@ Then separate the data into air and water temperature files
 
 ```{r}
 # Air and water temperature data: YF location, 4.5 scenario
-YF_Temps <- read.csv("YF_45SNAPForecast_MonCorr.csv", header=TRUE)
+YF_Temps <- read.csv("BiasCorrection/DataFiles/YF_45SNAPForecast_MonCorr.csv", header=TRUE)
 
 # Air temperature variables
 YF_AirTemp45 <- YF_Temps %>%
@@ -1137,6 +1112,7 @@ Xf[t] ~ dnorm(muAirTemp[t], tauAirTemp[t]) # Latent air temperature is drawn fro
 for(t in 2:n){ # loop over all time steps except teh first (we defined ic above)
 for(p in 1:np){
 mu[t,p] <- x[t-1,p] + int[p] + beta[1] * x[t-1,p] + beta[2] * Xf[t] # Mean water temperature is a function of the previous time step and current air temperature
+mu1[t,p] <- ifelse(mu[t,p] < 0, 0, mu[t,p])
 x[t,p] ~ dnorm(mu[t,p], tau_add) # Latent water temperature is drawn from mean water temperature with process uncertainty
 }
 }
@@ -1425,7 +1401,7 @@ Creating some nice plots of these
 # set up the colors here for the plots below so that each pond has the same color each time
 Mod_YF45 <- out_obs_mapped
 str(Mod_YF45)
-write.csv(Mod_YF45, "Mod_YF45.csv")
+write.csv(Mod_YF45, "Corr_Mod_YF45_0.csv")
 
 # Define the custom color palette
 YF_colors <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "lightblue", "lightgreen", "#6A3D9A")
@@ -1569,7 +1545,7 @@ Then separate the data into air and water temperature files
 
 ```{r}
 # Air and water temperature data: YF location, 4.5 scenario
-YF_Temps <- read.csv("YF_85SNAPForecast_MonCorr.csv", header=TRUE)
+YF_Temps <- read.csv("BiasCorrection/DataFiles/YF_85SNAPForecast_MonCorr.csv", header=TRUE)
 
 # Air temperature variables
 YF_AirTemp85 <- YF_Temps %>%
@@ -1616,6 +1592,7 @@ Xf[t] ~ dnorm(muAirTemp[t], tauAirTemp[t]) # Latent air temperature is drawn fro
 for(t in 2:n){ # loop over all time steps except teh first (we defined ic above)
 for(p in 1:np){
 mu[t,p] <- x[t-1,p] + int[p] + beta[1] * x[t-1,p] + beta[2] * Xf[t] # Mean water temperature is a function of the previous time step and current air temperature
+mu1[t,p] <- ifelse(mu[t,p] < 0, 0, mu[t,p])
 x[t,p] ~ dnorm(mu[t,p], tau_add) # Latent water temperature is drawn from mean water temperature with process uncertainty
 }
 }
@@ -1904,7 +1881,7 @@ Creating some nice plots of these
 # set up the colors here for the plots below so that each pond has the same color each time
 Mod_YF85 <- out_obs_mapped
 str(Mod_YF85)
-write.csv(Mod_YF85, "Mod_YF85.csv")
+write.csv(Mod_YF85, "Corr_Mod_YF85_0.csv")
 
 # Define the custom color palette
 YF_colors <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "lightblue", "lightgreen", "#6A3D9A")
